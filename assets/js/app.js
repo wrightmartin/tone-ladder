@@ -304,7 +304,6 @@ function updatePreview() {
   dom.inputHex.classList.remove('is-invalid');
 
   // Generate ramp for preview
-  // Negate temperature: UI +warm should produce warm highlights (algorithm expects opposite sign)
   // Apply non-linear mapping for perceptually linear response
   try {
     const rawRamp = generateRamp(baseHex, mapTemperature(temperature), steps, mode);
@@ -450,9 +449,8 @@ function handleGenerate() {
   }
 
   // Generate fresh ramp
-  // Negate temperature: UI +warm should produce warm highlights (algorithm expects opposite sign)
-  // Apply non-linear mapping to amplify effect at extremes
-  const rawRamp = generateRamp(baseHex, -mapTemperature(temperature), steps, mode);
+  // Apply non-linear mapping for perceptually linear response
+  const rawRamp = generateRamp(baseHex, mapTemperature(temperature), steps, mode);
   const rampHexes = sortByLightness(rawRamp);
 
   // Create entry and add to history
