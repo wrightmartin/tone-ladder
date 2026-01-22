@@ -307,7 +307,7 @@ function updatePreview() {
   // Negate temperature: UI +warm should produce warm highlights (algorithm expects opposite sign)
   // Apply non-linear mapping for perceptually linear response
   try {
-    const rawRamp = generateRamp(baseHex, -mapTemperature(temperature), steps, mode);
+    const rawRamp = generateRamp(baseHex, mapTemperature(temperature), steps, mode);
     state.preview.rampHexes = sortByLightness(rawRamp);
     state.preview.slugLabel = labelToSlug(label || 'untitled');
     renderPreview();

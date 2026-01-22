@@ -14,10 +14,12 @@ import {
 // Mode configurations
 const MODE_CONFIG = {
   conservative: {
-    maxHueShift: 8   // degrees (subtle shifts)
+    maxHueShift: 12,      // degrees (clearly visible but restrained)
+    chromaRetention: 0.45 // minimum chroma retention at extremes
   },
   painterly: {
-    maxHueShift: 22  // degrees (pronounced artistic shifts)
+    maxHueShift: 26,      // degrees (bold, unmistakable artistic shifts)
+    chromaRetention: 0.35 // allow more desaturation at extremes for drama
   }
 };
 
@@ -99,7 +101,7 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
     const H = normalizeHue(baseOklch.H + hueShift);
 
     // Calculate chroma with saturation curve (peaks at midtones)
-    const C = calculateChroma(baseOklch.C, relativePosition);
+    const C = calculateChroma(baseOklch.C, relativePosition, config.chromaRetention);
 
     // Clamp to sRGB gamut
     const clamped = clampToSrgbGamut({ L, C, H });
@@ -142,14 +144,17 @@ function calculateHueShift(baseHue, relativePosition, temperature, maxShift) {
 /**
  * Calculate chroma for a given position in the ramp
  * Saturation peaks near midtones and decreases toward extremes
+ *
+ * @param {number} baseChroma - Base color chroma
+ * @param {number} relativePosition - Position in ramp (-1 to +1)
+ * @param {number} minRetention - Minimum chroma retention at extremes (mode-dependent)
  */
-function calculateChroma(baseChroma, relativePosition) {
+function calculateChroma(baseChroma, relativePosition, minRetention = 0.4) {
   // Saturation curve: peaks at midpoint, decreases toward extremes
   // Using a cosine curve for smooth falloff
   const saturationMultiplier = 0.5 + 0.5 * Math.cos(relativePosition * Math.PI);
 
-  // Apply a minimum retention so colors don't become completely desaturated
-  const minRetention = 0.4;
+  // Apply minimum retention so colors don't become completely desaturated
   const effectiveMultiplier = minRetention + (1 - minRetention) * saturationMultiplier;
 
   return baseChroma * effectiveMultiplier;
