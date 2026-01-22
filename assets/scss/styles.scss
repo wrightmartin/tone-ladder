@@ -1,0 +1,656 @@
+// Tone Ladder - Styles
+// A clean, restrained aesthetic for UX designers and artists
+
+// ==========================================================================
+// Variables
+// ==========================================================================
+
+$font-stack: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+$font-mono: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+
+$color-bg: #fafafa;
+$color-surface: #ffffff;
+$color-border: #e0e0e0;
+$color-border-light: #f0f0f0;
+$color-text: #1a1a1a;
+$color-text-muted: #666666;
+$color-text-subtle: #999999;
+$color-primary: #2F6FED;
+$color-primary-hover: #1a5ad9;
+$color-danger: #d32f2f;
+$color-danger-hover: #b71c1c;
+$color-success: #2e7d32;
+
+$radius-sm: 4px;
+$radius-md: 6px;
+$radius-lg: 8px;
+
+$shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+$shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+$spacing-xs: 4px;
+$spacing-sm: 8px;
+$spacing-md: 16px;
+$spacing-lg: 24px;
+$spacing-xl: 32px;
+
+// ==========================================================================
+// Reset & Base
+// ==========================================================================
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: $spacing-lg;
+  font-family: $font-stack;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: $color-text;
+  background: $color-bg;
+}
+
+h1, h2, h3 {
+  margin: 0;
+  font-weight: 600;
+}
+
+ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input, select {
+  font-family: inherit;
+}
+
+// ==========================================================================
+// Layout
+// ==========================================================================
+
+.app {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  grid-template-rows: auto 1fr;
+  gap: $spacing-lg;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  grid-column: 1 / -1;
+  padding-bottom: $spacing-md;
+  border-bottom: 1px solid $color-border-light;
+
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .tagline {
+    margin: $spacing-xs 0 0;
+    color: $color-text-muted;
+    font-size: 0.875rem;
+  }
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-lg;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-lg;
+}
+
+// ==========================================================================
+// Panels
+// ==========================================================================
+
+.panel {
+  background: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $spacing-lg;
+
+  &__title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: $color-text-muted;
+    margin-bottom: $spacing-md;
+  }
+}
+
+.panel--input {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.panel--preview {
+  flex: 1;
+  min-height: 200px;
+}
+
+.panel--export {
+  &[hidden] {
+    display: none;
+  }
+}
+
+.panel--history,
+.panel--starred {
+  .panel__title {
+    margin-bottom: $spacing-sm;
+  }
+}
+
+// ==========================================================================
+// Input Controls
+// ==========================================================================
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+
+  > label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: $color-text-muted;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+.input-row {
+  display: flex;
+  gap: $spacing-sm;
+  align-items: center;
+}
+
+input[type="text"],
+input[type="number"] {
+  width: 100%;
+  padding: $spacing-sm $spacing-md;
+  font-size: 0.875rem;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  background: $color-surface;
+  transition: border-color 0.15s ease;
+
+  &:focus {
+    outline: none;
+    border-color: $color-primary;
+  }
+
+  &::placeholder {
+    color: $color-text-subtle;
+  }
+
+  &.is-invalid {
+    border-color: $color-danger;
+  }
+}
+
+.color-picker {
+  width: 40px;
+  height: 36px;
+  padding: 2px;
+  border: 1px solid $color-border;
+  border-radius: $radius-md;
+  background: $color-surface;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  &::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  &::-webkit-color-swatch {
+    border: none;
+    border-radius: $radius-sm;
+  }
+}
+
+// Slider
+.slider-container {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
+.slider-label {
+  font-size: 0.6875rem;
+  color: $color-text-subtle;
+  flex-shrink: 0;
+  width: 40px;
+
+  &--left {
+    text-align: right;
+  }
+
+  &--right {
+    text-align: left;
+  }
+}
+
+.temperature-value {
+  font-family: $font-mono;
+  font-size: 0.6875rem;
+  color: $color-text-muted;
+  background: $color-bg;
+  padding: 2px 6px;
+  border-radius: $radius-sm;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 4px;
+  background: $color-border;
+  border-radius: 2px;
+  outline: none;
+
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: $color-primary;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.1s ease;
+
+    &:hover {
+      transform: scale(1.1);
+    }
+  }
+
+  &::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: $color-primary;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+}
+
+// Toggle Buttons
+.button-group {
+  display: flex;
+  gap: 1px;
+  background: $color-border;
+  border-radius: $radius-md;
+  overflow: hidden;
+}
+
+.btn-toggle {
+  flex: 1;
+  padding: $spacing-sm $spacing-md;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  background: $color-surface;
+  border: none;
+  color: $color-text-muted;
+  transition: background-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: $color-bg;
+  }
+
+  &[aria-pressed="true"] {
+    background: $color-primary;
+    color: white;
+  }
+}
+
+// ==========================================================================
+// Buttons
+// ==========================================================================
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: $spacing-xs;
+  padding: $spacing-sm $spacing-lg;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: none;
+  border-radius: $radius-md;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.btn--primary {
+  background: $color-primary;
+  color: white;
+
+  &:hover:not(:disabled) {
+    background: $color-primary-hover;
+  }
+}
+
+.btn--secondary {
+  background: $color-bg;
+  color: $color-text;
+  border: 1px solid $color-border;
+
+  &:hover:not(:disabled) {
+    background: $color-border-light;
+  }
+}
+
+.btn--ghost {
+  background: transparent;
+  color: $color-primary;
+  padding: $spacing-xs $spacing-sm;
+
+  &:hover:not(:disabled) {
+    background: rgba($color-primary, 0.08);
+  }
+}
+
+.btn--danger {
+  background: transparent;
+  color: $color-danger;
+  border: 1px solid $color-border;
+
+  &:hover:not(:disabled) {
+    background: rgba($color-danger, 0.08);
+    border-color: $color-danger;
+  }
+}
+
+.btn--small {
+  padding: $spacing-xs $spacing-sm;
+  font-size: 0.75rem;
+}
+
+// ==========================================================================
+// Ramp / Swatches
+// ==========================================================================
+
+.ramp {
+  display: flex;
+  gap: 2px;
+  height: 120px;
+}
+
+.swatch {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  border-radius: $radius-sm;
+  overflow: hidden;
+  position: relative;
+
+  &__hex {
+    font-family: $font-mono;
+    font-size: 0.625rem;
+    text-align: center;
+    padding: $spacing-xs;
+    background: rgba(255, 255, 255, 0.9);
+    color: $color-text;
+    backdrop-filter: blur(4px);
+  }
+}
+
+// Mini swatch strip for history items
+.swatch-strip {
+  display: flex;
+  height: 16px;
+  border-radius: 2px;
+  overflow: hidden;
+
+  .swatch-mini {
+    flex: 1;
+  }
+}
+
+// ==========================================================================
+// History
+// ==========================================================================
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $spacing-sm;
+
+  .panel__title {
+    margin-bottom: 0;
+  }
+
+  .btn[hidden] {
+    display: none;
+  }
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+}
+
+.history-entry {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-xs;
+  padding: $spacing-sm;
+  background: $color-bg;
+  border-radius: $radius-md;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background: #f0f0f0;
+  }
+
+  &.is-active {
+    outline: 2px solid $color-primary;
+    outline-offset: -2px;
+  }
+}
+
+.history-entry__header {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+}
+
+.history-entry__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.history-entry__label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-entry__hex {
+  font-family: $font-mono;
+  font-size: 0.6875rem;
+  color: $color-text-muted;
+}
+
+.history-entry__actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: $radius-sm;
+  color: $color-text-subtle;
+  font-size: 0.875rem;
+  transition: background-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.08);
+    color: $color-text;
+  }
+
+  &--star {
+    &:hover,
+    &.is-starred {
+      color: #f59e0b;
+    }
+  }
+
+  &--remove:hover {
+    color: $color-danger;
+  }
+}
+
+.history-empty {
+  font-size: 0.8125rem;
+  color: $color-text-subtle;
+  text-align: center;
+  padding: $spacing-md;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.history-actions {
+  padding-top: $spacing-sm;
+  border-top: 1px solid $color-border-light;
+}
+
+// ==========================================================================
+// Export
+// ==========================================================================
+
+.export-format {
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-md;
+}
+
+.export-header {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+
+  label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: $color-text-muted;
+  }
+
+  select {
+    flex: 1;
+    padding: $spacing-xs $spacing-sm;
+    font-size: 0.8125rem;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    background: $color-surface;
+
+    &:focus {
+      outline: none;
+      border-color: $color-primary;
+    }
+  }
+}
+
+.export-code {
+  margin: 0;
+  padding: $spacing-md;
+  font-family: $font-mono;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  background: $color-bg;
+  border: 1px solid $color-border-light;
+  border-radius: $radius-md;
+  overflow-x: auto;
+  white-space: pre;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.export-actions {
+  display: flex;
+  align-items: center;
+  gap: $spacing-md;
+}
+
+.copy-feedback {
+  font-size: 0.75rem;
+  color: $color-success;
+  font-weight: 500;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+// ==========================================================================
+// Responsive
+// ==========================================================================
+
+@media (max-width: 768px) {
+  body {
+    padding: $spacing-md;
+  }
+
+  .app {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    order: 2;
+  }
+
+  .main {
+    order: 1;
+  }
+
+  .ramp {
+    height: 80px;
+  }
+}

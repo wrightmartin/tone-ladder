@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tone Ladder</title>
+  <link rel="stylesheet" href="./assets/css/styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>Tone Ladder</h1>
+      <p class="tagline">Hue-shift tonal ramp generator</p>
+    </header>
+
+    <main class="main">
+      <!-- Input Panel -->
+      <section class="panel panel--input">
+        <h2 class="panel__title">Settings</h2>
+
+        <div class="input-group">
+          <label for="input-hex">Base Colour</label>
+          <div class="input-row">
+            <input type="color" id="input-color-picker" class="color-picker">
+            <input type="text" id="input-hex" placeholder="#2F6FED" maxlength="7">
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="input-label">Label</label>
+          <input type="text" id="input-label" placeholder="Ocean Blue" required>
+        </div>
+
+        <div class="input-group">
+          <label for="input-temperature">
+            Light Temperature
+            <span class="temperature-value" id="temperature-display">+0.25</span>
+          </label>
+          <div class="slider-container">
+            <span class="slider-label slider-label--left">Cool</span>
+            <input type="range" id="input-temperature" min="-1" max="1" step="0.05" value="0.25">
+            <span class="slider-label slider-label--right">Warm</span>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>Steps</label>
+          <div class="button-group" role="radiogroup" aria-label="Number of steps">
+            <button type="button" class="btn-toggle" data-steps="9" aria-pressed="true">9</button>
+            <button type="button" class="btn-toggle" data-steps="11" aria-pressed="false">11</button>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label>Mode</label>
+          <div class="button-group" role="radiogroup" aria-label="Algorithm mode">
+            <button type="button" class="btn-toggle" data-mode="conservative" aria-pressed="false">Conservative</button>
+            <button type="button" class="btn-toggle" data-mode="painterly" aria-pressed="true">Painterly</button>
+          </div>
+        </div>
+
+        <button type="button" id="btn-generate" class="btn btn--primary">Generate</button>
+      </section>
+
+      <!-- Preview Panel -->
+      <section class="panel panel--preview">
+        <h2 class="panel__title">Preview</h2>
+        <div class="ramp" id="preview-ramp">
+          <!-- Swatches rendered by JS -->
+        </div>
+      </section>
+
+      <!-- Export Panel -->
+      <section class="panel panel--export" id="export-panel" hidden>
+        <h2 class="panel__title">Export CSS Variables</h2>
+
+        <div class="export-format">
+          <div class="export-header">
+            <label for="export-format-select">Format</label>
+            <select id="export-format-select">
+              <option value="short">--{slug}-{step}</option>
+              <option value="long">--color-{slug}-{step}</option>
+            </select>
+          </div>
+          <pre class="export-code" id="export-code"></pre>
+          <div class="export-actions">
+            <button type="button" id="btn-copy" class="btn btn--secondary">Copy to Clipboard</button>
+            <span class="copy-feedback" id="copy-feedback" hidden>Copied!</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- History Panel -->
+    <aside class="sidebar">
+      <section class="panel panel--history">
+        <div class="history-header">
+          <h2 class="panel__title">Recent</h2>
+          <button type="button" id="btn-undo" class="btn btn--small btn--ghost" hidden>Undo</button>
+        </div>
+        <ul class="history-list" id="recent-list">
+          <!-- Recent entries rendered by JS -->
+        </ul>
+        <p class="history-empty" id="recent-empty">No recent ramps</p>
+      </section>
+
+      <section class="panel panel--starred">
+        <h2 class="panel__title">Starred</h2>
+        <ul class="history-list" id="starred-list">
+          <!-- Starred entries rendered by JS -->
+        </ul>
+        <p class="history-empty" id="starred-empty">No starred ramps</p>
+      </section>
+
+      <div class="history-actions">
+        <button type="button" id="btn-clear-all" class="btn btn--small btn--danger">Clear All</button>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module" src="./assets/js/app.js"></script>
+</body>
+</html>

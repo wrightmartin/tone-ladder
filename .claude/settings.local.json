@@ -3,7 +3,9 @@
     "allow": [
       "Bash(node test-algorithm.mjs)",
       "Bash(node test-colors.mjs:*)",
-      "Bash(node verify-hue.mjs:*)"
+      "Bash(node verify-hue.mjs:*)",
+      "Bash(sass:*)",
+      "Bash(node -e:*)"
     ]
   }
 }
