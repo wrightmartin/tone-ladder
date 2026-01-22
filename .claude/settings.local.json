@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node test-algorithm.mjs)",
+      "Bash(node test-colors.mjs:*)",
+      "Bash(node verify-hue.mjs:*)"
+    ]
+  }
+}
