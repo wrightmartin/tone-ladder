@@ -6,7 +6,7 @@
  */
 
 import { hexToOklch } from './convert.js';
-import { generateOklchRamp, rampToHex, validateHueDeltas } from './hueShift.js';
+import { generateOklchRamp, rampToHex, validateHueDeltas, compareModesConsole } from './hueShift.js';
 
 // Default values
 const DEFAULT_BASE_HEX = '#2F6FED';
@@ -102,6 +102,23 @@ export function validateRamp(
 ) {
   const normalizedHex = normalizeHex(baseHex);
   return validateHueDeltas(normalizedHex, temperature, steps, mode);
+}
+
+/**
+ * Compare Conservative vs Painterly modes side-by-side
+ * Logs summary to console showing hue deltas for both modes
+ *
+ * @param {string} baseHex - Base color as hex (default: #3366cc)
+ * @param {number} temperature - Light temperature (default: 1 for max warm)
+ * @param {number} steps - Number of steps (default: 11)
+ * @returns {Object} Results for both modes
+ */
+export function compareModes(
+  baseHex = '#3366cc',
+  temperature = 1,
+  steps = 11
+) {
+  return compareModesConsole(baseHex, temperature, steps);
 }
 
 // Export defaults for reference

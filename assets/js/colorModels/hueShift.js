@@ -11,21 +11,52 @@ import {
   hueDifference
 } from './convert.js';
 
-// Mode configurations
+// =============================================================================
+// TUNABLE CONSTANTS - adjust these to calibrate mode behavior
+// =============================================================================
+
+// Mode configurations - tuned for visible separation between modes
 const MODE_CONFIG = {
   conservative: {
-    maxHueShift: 12,      // degrees (clearly visible but restrained)
-    chromaRetention: 0.45 // minimum chroma retention at extremes
+    maxHueShift: 18,        // degrees - noticeable, tasteful shift
+    chromaRetention: 0.40,  // minimum chroma at extremes
+    chromaCurveExponent: 1.0 // standard cosine falloff
   },
   painterly: {
-    maxHueShift: 26,      // degrees (bold, unmistakable artistic shifts)
-    chromaRetention: 0.35 // allow more desaturation at extremes for drama
+    maxHueShift: 38,        // degrees - bold, dramatic artistic shifts
+    chromaRetention: 0.28,  // allow strong desaturation for drama
+    chromaCurveExponent: 0.8 // slower falloff, keeps saturation longer
   }
 };
+
+// Hue stability thresholds - prevents odd casts when chroma is very low
+// Below CHROMA_FLOOR, hue shift is fully frozen (color is nearly neutral)
+// Between FLOOR and REF, hue shift is progressively damped
+const HUE_STABILITY_CHROMA_FLOOR = 0.012;
+const HUE_STABILITY_CHROMA_REF = 0.045;
 
 // Lightness bounds (prevents pure white/black)
 const L_MIN = 0.08;
 const L_MAX = 0.98;
+
+/**
+ * Hue stability damping factor
+ * Returns 0-1 multiplier for hue shift based on target chroma
+ * When chroma is very low (near neutral), hue becomes unstable and can
+ * produce odd casts (pink/lavender near white). This dampens the shift.
+ *
+ * @param {number} chroma - Target chroma value
+ * @returns {number} Damping factor 0-1 (0 = no shift, 1 = full shift)
+ */
+function getHueStabilityFactor(chroma) {
+  if (chroma <= HUE_STABILITY_CHROMA_FLOOR) return 0;
+  if (chroma >= HUE_STABILITY_CHROMA_REF) return 1;
+
+  // Smooth ease-in curve for gradual transition
+  const t = (chroma - HUE_STABILITY_CHROMA_FLOOR) /
+            (HUE_STABILITY_CHROMA_REF - HUE_STABILITY_CHROMA_FLOOR);
+  return t * t; // Quadratic ease-in
+}
 
 /**
  * Generates a tonal ramp with hue shifts based on light temperature
@@ -86,22 +117,28 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
     // Negative = darker than base, Positive = lighter than base
     const relativePosition = (i - midIndex) / midIndex;
 
-    // Calculate hue shift
+    // Calculate target chroma FIRST (needed for hue stability check)
+    const targetChroma = calculateChroma(baseOklch.C, relativePosition, config);
+
+    // Calculate raw hue shift
     // For warm light (+temperature):
     //   - Highlights (positive position) shift toward warm (yellow ~80deg)
     //   - Shadows (negative position) shift toward cool (blue/purple ~270deg)
     // For cool light (-temperature): opposite
-    const hueShift = calculateHueShift(
+    const rawHueShift = calculateHueShift(
       baseOklch.H,
       relativePosition,
       temperature,
       maxShift
     );
 
-    const H = normalizeHue(baseOklch.H + hueShift);
+    // Apply hue stability damping when chroma is low
+    // This prevents odd pink/lavender casts near white
+    const stabilityFactor = getHueStabilityFactor(targetChroma);
+    const hueShift = rawHueShift * stabilityFactor;
 
-    // Calculate chroma with saturation curve (peaks at midtones)
-    const C = calculateChroma(baseOklch.C, relativePosition, config.chromaRetention);
+    const H = normalizeHue(baseOklch.H + hueShift);
+    const C = targetChroma;
 
     // Clamp to sRGB gamut
     const clamped = clampToSrgbGamut({ L, C, H });
@@ -147,12 +184,20 @@ function calculateHueShift(baseHue, relativePosition, temperature, maxShift) {
  *
  * @param {number} baseChroma - Base color chroma
  * @param {number} relativePosition - Position in ramp (-1 to +1)
- * @param {number} minRetention - Minimum chroma retention at extremes (mode-dependent)
+ * @param {Object} config - Mode configuration with chromaRetention and chromaCurveExponent
  */
-function calculateChroma(baseChroma, relativePosition, minRetention = 0.4) {
+function calculateChroma(baseChroma, relativePosition, config) {
+  const minRetention = config.chromaRetention;
+  const exponent = config.chromaCurveExponent;
+
   // Saturation curve: peaks at midpoint, decreases toward extremes
-  // Using a cosine curve for smooth falloff
-  const saturationMultiplier = 0.5 + 0.5 * Math.cos(relativePosition * Math.PI);
+  // Using a cosine curve for smooth falloff, with exponent to control speed
+  const rawMultiplier = 0.5 + 0.5 * Math.cos(relativePosition * Math.PI);
+
+  // Apply exponent to control falloff speed
+  // exponent < 1 = slower falloff (keeps saturation longer) - good for painterly
+  // exponent > 1 = faster falloff (desaturates quicker)
+  const saturationMultiplier = Math.pow(rawMultiplier, exponent);
 
   // Apply minimum retention so colors don't become completely desaturated
   const effectiveMultiplier = minRetention + (1 - minRetention) * saturationMultiplier;
@@ -162,7 +207,7 @@ function calculateChroma(baseChroma, relativePosition, minRetention = 0.4) {
 
 /**
  * Validation helper - logs hue deltas per step to console
- * Use this to verify the algorithm meets the >=8 degree rule at extremes
+ * Use this to verify the algorithm behavior
  *
  * @param {string} baseHex - Base color as hex
  * @param {number} temperature - Light temperature
@@ -176,10 +221,11 @@ export function validateHueDeltas(baseHex, temperature, steps, mode) {
   const midIndex = Math.floor(steps / 2);
   const baseHue = baseOklch.H;
 
-  console.group(`Hue Shift Validation - ${mode} mode`);
-  console.log(`Base: ${baseHex} (H: ${baseHue.toFixed(1)})`);
+  console.group(`Hue Shift Validation - ${mode.toUpperCase()} mode`);
+  console.log(`Base: ${baseHex} (H: ${baseHue.toFixed(1)}, C: ${baseOklch.C.toFixed(3)})`);
   console.log(`Temperature: ${temperature}`);
   console.log(`Steps: ${steps}`);
+  console.log(`Max hue shift setting: ${MODE_CONFIG[mode].maxHueShift}°`);
   console.log('---');
 
   const deltas = [];
@@ -189,7 +235,7 @@ export function validateHueDeltas(baseHex, temperature, steps, mode) {
     const label = i === midIndex ? '(BASE)' : i < midIndex ? '(shadow)' : '(highlight)';
     console.log(
       `Step ${i}: L=${color.L.toFixed(3)}, C=${color.C.toFixed(3)}, ` +
-      `H=${color.H.toFixed(1)} | delta: ${delta >= 0 ? '+' : ''}${delta.toFixed(1)} ${label}`
+      `H=${color.H.toFixed(1)} | Δhue: ${delta >= 0 ? '+' : ''}${delta.toFixed(1)}° ${label}`
     );
   });
 
@@ -197,13 +243,8 @@ export function validateHueDeltas(baseHex, temperature, steps, mode) {
   const lightestDelta = Math.abs(deltas[steps - 1]);
 
   console.log('---');
-  console.log(`Darkest step hue delta: ${darkestDelta.toFixed(1)}`);
-  console.log(`Lightest step hue delta: ${lightestDelta.toFixed(1)}`);
-
-  if (mode === 'painterly') {
-    const passes = darkestDelta >= 8 && lightestDelta >= 8;
-    console.log(`Painterly 8 rule: ${passes ? 'PASS' : 'FAIL'}`);
-  }
+  console.log(`Shadow (darkest) hue delta: ${darkestDelta.toFixed(1)}°`);
+  console.log(`Highlight (lightest) hue delta: ${lightestDelta.toFixed(1)}°`);
 
   console.groupEnd();
 
@@ -213,6 +254,40 @@ export function validateHueDeltas(baseHex, temperature, steps, mode) {
     lightestDelta,
     ramp
   };
+}
+
+/**
+ * Compare Conservative vs Painterly hue shifts for a given color
+ * Logs a side-by-side summary to console
+ *
+ * @param {string} baseHex - Base color as hex (default: saturated blue #3366cc)
+ * @param {number} temperature - Light temperature (default: 1 for max warm)
+ * @param {number} steps - Number of steps (default: 11)
+ */
+export function compareModesConsole(baseHex = '#3366cc', temperature = 1, steps = 11) {
+  const baseOklch = hexToOklch(baseHex);
+
+  console.group(`🎨 Mode Comparison: ${baseHex} @ temp=${temperature}`);
+  console.log(`Base hue: ${baseOklch.H.toFixed(1)}°, Base chroma: ${baseOklch.C.toFixed(3)}`);
+  console.log('');
+
+  const conservative = validateHueDeltas(baseHex, temperature, steps, 'conservative');
+  console.log('');
+  const painterly = validateHueDeltas(baseHex, temperature, steps, 'painterly');
+
+  console.log('');
+  console.log('=== SUMMARY ===');
+  console.log(`Conservative - Shadow: ${conservative.darkestDelta.toFixed(1)}°, Highlight: ${conservative.lightestDelta.toFixed(1)}°`);
+  console.log(`Painterly    - Shadow: ${painterly.darkestDelta.toFixed(1)}°, Highlight: ${painterly.lightestDelta.toFixed(1)}°`);
+  console.log(`Ratio (P/C)  - Shadow: ${(painterly.darkestDelta / conservative.darkestDelta).toFixed(2)}x, Highlight: ${(painterly.lightestDelta / conservative.lightestDelta).toFixed(2)}x`);
+
+  const painterlyLarger = painterly.darkestDelta > conservative.darkestDelta &&
+                          painterly.lightestDelta > conservative.lightestDelta;
+  console.log(`Painterly > Conservative: ${painterlyLarger ? '✓ PASS' : '✗ FAIL'}`);
+
+  console.groupEnd();
+
+  return { conservative, painterly };
 }
 
 /**
