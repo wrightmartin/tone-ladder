@@ -35,6 +35,11 @@ const MODE_CONFIG = {
 const HUE_STABILITY_CHROMA_FLOOR = 0.012;
 const HUE_STABILITY_CHROMA_REF = 0.045;
 
+// Temperature response curve exponent
+// > 1 compresses small values (gentle near neutral, strong at extremes)
+// 1.0 = linear, 2.0 = quadratic
+const TEMP_RESPONSE_EXPONENT = 1.6;
+
 // Lightness bounds (prevents pure white/black)
 const L_MIN = 0.08;
 const L_MAX = 0.98;
@@ -56,6 +61,23 @@ function getHueStabilityFactor(chroma) {
   const t = (chroma - HUE_STABILITY_CHROMA_FLOOR) /
             (HUE_STABILITY_CHROMA_REF - HUE_STABILITY_CHROMA_FLOOR);
   return t * t; // Quadratic ease-in
+}
+
+/**
+ * Map temperature to perceptual response curve
+ * Uses power function: sign(t) * |t|^γ
+ *
+ * With γ > 1:
+ * - Small values are compressed (gentle near neutral)
+ * - Large values approach 1 (strong at extremes)
+ * - Continuous, monotonic, always passes through 0 and ±1
+ * - Sign is preserved (+ = warm, - = cool)
+ *
+ * @param {number} t - Raw temperature (-1 to +1)
+ * @returns {number} Mapped temperature (-1 to +1)
+ */
+function mapTemperature(t) {
+  return Math.sign(t) * Math.pow(Math.abs(t), TEMP_RESPONSE_EXPONENT);
 }
 
 /**
@@ -163,15 +185,14 @@ function calculateHueShift(baseHue, relativePosition, temperature, maxShift) {
   // Magnitude increases toward extremes (slight ease-in)
   const magnitude = Math.pow(Math.abs(relativePosition), 1.1);
 
-  // Temperature influence uses sqrt curve for more pronounced effect
-  // at moderate temperature values while preserving direction control
-  const tempSign = Math.sign(temperature);
-  const tempStrength = Math.sqrt(Math.abs(temperature));
+  // Apply perceptual temperature curve: gentle near neutral, strong at extremes
+  const mappedTemp = mapTemperature(temperature);
 
   // Direction: positive = shift hue up, negative = shift hue down
   // Warm light (+temp): highlights shift +, shadows shift -
   // Cool light (-temp): highlights shift -, shadows shift +
-  const direction = tempSign * relativePosition;
+  const direction = Math.sign(mappedTemp) * relativePosition;
+  const tempStrength = Math.abs(mappedTemp);
 
   const shiftAmount = direction * magnitude * tempStrength * maxShift;
 
