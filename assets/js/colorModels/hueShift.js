@@ -20,14 +20,21 @@ const MODE_CONFIG = {
   conservative: {
     maxHueShift: 18,        // degrees - noticeable, tasteful shift
     chromaRetention: 0.40,  // minimum chroma at extremes
-    chromaCurveExponent: 1.0 // standard cosine falloff
+    chromaCurveExponent: 1.0, // standard cosine falloff
+    convergenceStrength: 0.45 // highlight convergence toward light anchor
   },
   painterly: {
     maxHueShift: 38,        // degrees - bold, dramatic artistic shifts
     chromaRetention: 0.28,  // allow strong desaturation for drama
-    chromaCurveExponent: 0.8 // slower falloff, keeps saturation longer
+    chromaCurveExponent: 0.8, // slower falloff, keeps saturation longer
+    convergenceStrength: 0.85 // stronger convergence for dramatic effect
   }
 };
+
+// Light color anchor hues (OKLCH hue angles)
+// Highlights converge toward these based on temperature sign
+const WARM_LIGHT_ANCHOR_H = 65;   // amber/golden
+const COOL_LIGHT_ANCHOR_H = 205;  // cyan/sky
 
 // Hue stability thresholds - prevents odd casts when chroma is very low
 // Below CHROMA_FLOOR, hue shift is fully frozen (color is nearly neutral)
@@ -78,6 +85,44 @@ function getHueStabilityFactor(chroma) {
  */
 function mapTemperature(t) {
   return Math.sign(t) * Math.pow(Math.abs(t), TEMP_RESPONSE_EXPONENT);
+}
+
+/**
+ * Smoothstep interpolation
+ * Returns 0 when x <= edge0, 1 when x >= edge1, smooth curve between
+ *
+ * @param {number} edge0 - Lower edge
+ * @param {number} edge1 - Upper edge
+ * @param {number} x - Input value
+ * @returns {number} Smoothed value 0-1
+ */
+function smoothstep(edge0, edge1, x) {
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Blend between two hue angles using shortest arc
+ * Handles wraparound at 0/360 correctly
+ *
+ * @param {number} h1 - Start hue (degrees)
+ * @param {number} h2 - End hue (degrees)
+ * @param {number} w - Blend weight 0-1 (0 = h1, 1 = h2)
+ * @returns {number} Interpolated hue (degrees, normalized 0-360)
+ */
+function blendHueDegrees(h1, h2, w) {
+  // Normalize both hues to 0-360
+  h1 = ((h1 % 360) + 360) % 360;
+  h2 = ((h2 % 360) + 360) % 360;
+
+  // Find shortest arc direction
+  let delta = h2 - h1;
+  if (delta > 180) delta -= 360;
+  if (delta < -180) delta += 360;
+
+  // Interpolate and normalize result
+  const result = h1 + delta * w;
+  return ((result % 360) + 360) % 360;
 }
 
 /**
@@ -159,7 +204,26 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
     const stabilityFactor = getHueStabilityFactor(targetChroma);
     const hueShift = rawHueShift * stabilityFactor;
 
-    const H = normalizeHue(baseOklch.H + hueShift);
+    let H = normalizeHue(baseOklch.H + hueShift);
+
+    // Apply highlight convergence toward light anchor
+    // Only for highlights (relativePosition > 0) and when temperature !== 0
+    if (relativePosition > 0 && temperature !== 0) {
+      // Position within highlight range: 0 at base, 1 at lightest
+      const highlightPosition = relativePosition; // already 0-1 for highlights
+
+      // Convergence weight: kicks in near the top third, scales with temperature
+      const wPos = smoothstep(0.6, 1.0, highlightPosition);
+      const wTemp = Math.pow(Math.abs(temperature), 0.7);
+      const w = wPos * wTemp * config.convergenceStrength;
+
+      // Choose anchor based on temperature sign
+      const anchorHue = temperature > 0 ? WARM_LIGHT_ANCHOR_H : COOL_LIGHT_ANCHOR_H;
+
+      // Blend toward anchor using shortest arc
+      H = blendHueDegrees(H, anchorHue, w);
+    }
+
     const C = targetChroma;
 
     // Clamp to sRGB gamut
@@ -188,10 +252,10 @@ function calculateHueShift(baseHue, relativePosition, temperature, maxShift) {
   // Apply perceptual temperature curve: gentle near neutral, strong at extremes
   const mappedTemp = mapTemperature(temperature);
 
-  // Direction: positive = shift hue up, negative = shift hue down
-  // Warm light (+temp): highlights shift +, shadows shift -
-  // Cool light (-temp): highlights shift -, shadows shift +
-  const direction = Math.sign(mappedTemp) * relativePosition;
+  // Direction: negative = shift toward warm (lower hue), positive = shift toward cool (higher hue)
+  // Warm light (+temp): highlights shift toward warm (-), shadows shift toward cool (+)
+  // Cool light (-temp): highlights shift toward cool (+), shadows shift toward warm (-)
+  const direction = -Math.sign(mappedTemp) * relativePosition;
   const tempStrength = Math.abs(mappedTemp);
 
   const shiftAmount = direction * magnitude * tempStrength * maxShift;

@@ -118,24 +118,6 @@ function sortByLightness(hexArray) {
   });
 }
 
-/**
- * Map UI temperature to algorithm temperature with gentle non-linear curve.
- *
- * This mapping exists to make the hue-shift effect more perceptually linear
- * across the slider range. It is an artistic/UX choice, not physically accurate.
- *
- * Shape: sign(t) * |t|^0.85
- * - Exponent < 1 gives slightly more sensitivity near the extremes
- * - No gain or overdrive: mapTemperature(±1) = ±1, mapTemperature(0) = 0
- *
- * @param {number} t - UI temperature (-1 to +1)
- * @returns {number} Mapped temperature for algorithm (-1 to +1)
- */
-function mapTemperature(t) {
-  const sign = t >= 0 ? 1 : -1;
-  return sign * Math.pow(Math.abs(t), 0.85);
-}
-
 // ==========================================================================
 // Rendering
 // ==========================================================================
@@ -304,9 +286,9 @@ function updatePreview() {
   dom.inputHex.classList.remove('is-invalid');
 
   // Generate ramp for preview
-  // Apply non-linear mapping for perceptually linear response
+  // Temperature mapping is handled internally by the color model
   try {
-    const rawRamp = generateRamp(baseHex, mapTemperature(temperature), steps, mode);
+    const rawRamp = generateRamp(baseHex, temperature, steps, mode);
     state.preview.rampHexes = sortByLightness(rawRamp);
     state.preview.slugLabel = labelToSlug(label || 'untitled');
     renderPreview();
@@ -449,8 +431,8 @@ function handleGenerate() {
   }
 
   // Generate fresh ramp
-  // Apply non-linear mapping for perceptually linear response
-  const rawRamp = generateRamp(baseHex, mapTemperature(temperature), steps, mode);
+  // Temperature mapping is handled internally by the color model
+  const rawRamp = generateRamp(baseHex, temperature, steps, mode);
   const rampHexes = sortByLightness(rawRamp);
 
   // Create entry and add to history
