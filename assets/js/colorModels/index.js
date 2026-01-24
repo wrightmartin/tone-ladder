@@ -18,7 +18,7 @@ const DEFAULT_MODE = 'painterly';
  * Generate a tonal ramp with hue shifts based on light temperature
  *
  * @param {string} baseHex - 6-digit hex string (with or without #), default #2F6FED
- * @param {number} temperature - Light temperature: -1.0 (cool) to +1.0 (warm), default 0.25
+ * @param {number} temperature - Light temperature: -1.0 (cool) to +1.0 (warm), default 0.6
  * @param {number} steps - Number of steps: 9 or 11, default 9
  * @param {string} mode - 'conservative' or 'painterly', default 'painterly'
  * @returns {string[]} Array of hex strings ordered darkest to lightest
