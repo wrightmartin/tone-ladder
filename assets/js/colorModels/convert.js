@@ -128,16 +128,23 @@ export function oklchToHex(oklch) {
 
 // --- Utility: Clamp OKLCH to sRGB gamut ---
 
+// Strict gamut check: no tolerance, exact [0, 1] range
+function isStrictlyInGamut(linear) {
+  return linear.r >= 0 && linear.r <= 1 &&
+         linear.g >= 0 && linear.g <= 1 &&
+         linear.b >= 0 && linear.b <= 1;
+}
+
+// Safety margin for chroma after binary search
+// Prevents borderline colors from being clipped in srgbToHex
+const CHROMA_SAFETY_MARGIN = 0.998;
+
 export function clampToSrgbGamut(oklch) {
   const oklab = oklchToOklab(oklch);
   const linear = oklabToLinearRgb(oklab);
 
-  // Check if in gamut
-  const inGamut = linear.r >= -0.0001 && linear.r <= 1.0001 &&
-                  linear.g >= -0.0001 && linear.g <= 1.0001 &&
-                  linear.b >= -0.0001 && linear.b <= 1.0001;
-
-  if (inGamut) {
+  // Check if strictly in gamut (no tolerance)
+  if (isStrictlyInGamut(linear)) {
     return oklch;
   }
 
@@ -150,18 +157,18 @@ export function clampToSrgbGamut(oklch) {
     const testOklab = oklchToOklab({ L: oklch.L, C: mid, H: oklch.H });
     const testLinear = oklabToLinearRgb(testOklab);
 
-    const testInGamut = testLinear.r >= -0.0001 && testLinear.r <= 1.0001 &&
-                        testLinear.g >= -0.0001 && testLinear.g <= 1.0001 &&
-                        testLinear.b >= -0.0001 && testLinear.b <= 1.0001;
-
-    if (testInGamut) {
+    if (isStrictlyInGamut(testLinear)) {
       low = mid;
     } else {
       high = mid;
     }
   }
 
-  return { L: oklch.L, C: low, H: oklch.H };
+  // Apply safety margin to stay well inside gamut
+  // This prevents downstream clipping in srgbToHex() which causes hue shifts
+  const safeC = Math.max(0, low * CHROMA_SAFETY_MARGIN);
+
+  return { L: oklch.L, C: safeC, H: oklch.H };
 }
 
 // --- Utility: Normalize hue to 0-360 ---

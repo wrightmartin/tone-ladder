@@ -6,7 +6,7 @@
  */
 
 import { hexToOklch } from './convert.js';
-import { generateOklchRamp, rampToHex, validateHueDeltas, compareModesConsole } from './hueShift.js';
+import { generateOklchRamp, rampToHex, validateHueDeltas, compareModesConsole, debugGamutMapping, debugHighlightStability } from './hueShift.js';
 
 // Default values
 const DEFAULT_BASE_HEX = '#2F6FED';
@@ -119,6 +119,30 @@ export function compareModes(
   steps = 11
 ) {
   return compareModesConsole(baseHex, temperature, steps);
+}
+
+/**
+ * Debug helper: Log gamut mapping before/after for each step
+ * Use to diagnose hue wobble issues
+ */
+export function debugGamut(
+  baseHex = '#2F6FED',
+  temperature = 1,
+  steps = 11,
+  mode = 'painterly'
+) {
+  debugGamutMapping(baseHex, temperature, steps, mode);
+}
+
+/**
+ * Debug helper: Verify highlight hue stability across test cases
+ * Checks for unexpected hue jumps in the top 3 highlight steps
+ * Tests at temp ±0.9, steps 9 and 11, both modes
+ *
+ * Run in console: ToneLadder.debugHighlights('#2F6FED')
+ */
+export function debugHighlights(baseHex = '#2F6FED') {
+  return debugHighlightStability(baseHex);
 }
 
 // Export defaults for reference
