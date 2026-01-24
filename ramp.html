@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tone Ladder — Ramp Comparison</title>
+  <style>
+    :root {
+      --bg: #0b0c10;
+      --card: #12141a;
+      --text: #e8eaf0;
+      --muted: #a6adbb;
+      --border: rgba(255,255,255,0.10);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: radial-gradient(1200px 600px at 20% -10%, rgba(120,140,255,0.18), transparent 60%),
+                  radial-gradient(900px 500px at 90% 10%, rgba(255,180,120,0.14), transparent 55%),
+                  var(--bg);
+      color: var(--text);
+      padding: 24px;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    header {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+    h1 { margin: 0; font-size: 20px; letter-spacing: 0.2px; }
+    p { margin: 0; color: var(--muted); line-height: 1.4; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+    @media (min-width: 900px) {
+      .grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+      overflow: hidden;
+    }
+    .card h2 {
+      margin: 0 0 2px 0;
+      font-size: 14px;
+      font-weight: 650;
+    }
+    .card .meta {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+
+    .ramp {
+      display: grid;
+      grid-template-columns: repeat(11, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .swatch {
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.14);
+      min-height: 96px;
+      position: relative;
+      overflow: hidden;
+    }
+    .swatch::after{
+      content:"";
+      position:absolute;
+      inset:0;
+      background: linear-gradient(180deg, rgba(255,255,255,0.10), transparent 55%);
+      pointer-events:none;
+    }
+    .label {
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      bottom: 8px;
+      font-size: 11px;
+      line-height: 1.25;
+      letter-spacing: 0.2px;
+      color: rgba(255,255,255,0.92);
+      text-shadow: 0 1px 2px rgba(0,0,0,0.55);
+      display: grid;
+      gap: 2px;
+    }
+    .label .idx { opacity: 0.8; font-variant-numeric: tabular-nums; }
+    .label code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 11px;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      padding: 2px 6px;
+      width: fit-content;
+    }
+
+    .vars {
+      margin: 0;
+      padding: 12px;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 12px;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.45;
+      color: rgba(255,255,255,0.88);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    .note {
+      margin-top: 14px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Tone Ladder — Ramp Comparison</h1>
+      <p>Two 11-step ramps (darkest → lightest) laid out side-by-side for quick visual comparison.</p>
+    </header>
+
+    <div class="grid">
+      <!-- Clean token ramp -->
+      <section class="card" aria-label="Clean token ramp">
+        <h2>Clean token ramp</h2>
+        <div class="meta">Intent: sensible design tokens; hue drift only, no explicit “light” destination.</div>
+
+        <div class="ramp">
+          <div class="swatch" style="background:#000022"><div class="label"><div class="idx">0</div><code>#000022</code></div></div>
+          <div class="swatch" style="background:#000C46"><div class="label"><div class="idx">1</div><code>#000C46</code></div></div>
+          <div class="swatch" style="background:#00236D"><div class="label"><div class="idx">2</div><code>#00236D</code></div></div>
+          <div class="swatch" style="background:#003B96"><div class="label"><div class="idx">3</div><code>#003B96</code></div></div>
+          <div class="swatch" style="background:#1755C1"><div class="label"><div class="idx">4</div><code>#1755C1</code></div></div>
+          <div class="swatch" style="background:#2F6FED"><div class="label"><div class="idx">5</div><code>#2F6FED</code></div></div>
+          <div class="swatch" style="background:#4F87FA"><div class="label"><div class="idx">6</div><code>#4F87FA</code></div></div>
+          <div class="swatch" style="background:#6F9EFF"><div class="label"><div class="idx">7</div><code>#6F9EFF</code></div></div>
+          <div class="swatch" style="background:#8DB5FF"><div class="label"><div class="idx">8</div><code>#8DB5FF</code></div></div>
+          <div class="swatch" style="background:#ACCCFF"><div class="label"><div class="idx">9</div><code>#ACCCFF</code></div></div>
+          <div class="swatch" style="background:#CBE3FF"><div class="label"><div class="idx">10</div><code>#CBE3FF</code></div></div>
+        </div>
+
+        <pre class="vars">/* Clean token ramp (11 steps), darkest → lightest */
+--ocean-blue-0:  #000022;
+--ocean-blue-1:  #000C46;
+--ocean-blue-2:  #00236D;
+--ocean-blue-3:  #003B96;
+--ocean-blue-4:  #1755C1;
+--ocean-blue-5:  #2F6FED;
+--ocean-blue-6:  #4F87FA;
+--ocean-blue-7:  #6F9EFF;
+--ocean-blue-8:  #8DB5FF;
+--ocean-blue-9:  #ACCCFF;
+--ocean-blue-10: #CBE3FF;</pre>
+      </section>
+
+      <!-- Painterly ramp -->
+      <section class="card" aria-label="Painterly ramp">
+        <h2>Painterly ramp</h2>
+        <div class="meta">Intent: highlights converge toward key light; shadows lean toward ambient; chroma falls near extremes.</div>
+
+        <div class="ramp">
+          <div class="swatch" style="background:#000412"><div class="label"><div class="idx">0</div><code>#000412</code></div></div>
+          <div class="swatch" style="background:#001636"><div class="label"><div class="idx">1</div><code>#001636</code></div></div>
+          <div class="swatch" style="background:#00276B"><div class="label"><div class="idx">2</div><code>#00276B</code></div></div>
+          <div class="swatch" style="background:#003D95"><div class="label"><div class="idx">3</div><code>#003D95</code></div></div>
+          <div class="swatch" style="background:#0C56C1"><div class="label"><div class="idx">4</div><code>#0C56C1</code></div></div>
+          <div class="swatch" style="background:#2F6FED"><div class="label"><div class="idx">5</div><code>#2F6FED</code></div></div>
+          <div class="swatch" style="background:#5486FA"><div class="label"><div class="idx">6</div><code>#5486FA</code></div></div>
+          <div class="swatch" style="background:#769CFF"><div class="label"><div class="idx">7</div><code>#769CFF</code></div></div>
+          <div class="swatch" style="background:#A8AEFF"><div class="label"><div class="idx">8</div><code>#A8AEFF</code></div></div>
+          <div class="swatch" style="background:#F1BAE4"><div class="label"><div class="idx">9</div><code>#F1BAE4</code></div></div>
+          <div class="swatch" style="background:#FFD5D7"><div class="label"><div class="idx">10</div><code>#FFD5D7</code></div></div>
+        </div>
+
+        <pre class="vars">/* Painterly ramp (11 steps), darkest → lightest */
+--ocean-blue-0:  #000412;
+--ocean-blue-1:  #001636;
+--ocean-blue-2:  #00276B;
+--ocean-blue-3:  #003D95;
+--ocean-blue-4:  #0C56C1;
+--ocean-blue-5:  #2F6FED;
+--ocean-blue-6:  #5486FA;
+--ocean-blue-7:  #769CFF;
+--ocean-blue-8:  #A8AEFF;
+--ocean-blue-9:  #F1BAE4;
+--ocean-blue-10: #FFD5D7;</pre>
+      </section>
+    </div>
+
+    <p class="note">
+      Tip: if you want these to match your real algorithm outputs exactly, swap the hex values for ones exported from your app and reload.
+    </p>
+  </div>
+</body>
+</html>
