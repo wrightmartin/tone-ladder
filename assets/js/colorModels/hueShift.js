@@ -36,6 +36,10 @@ const MODE_CONFIG = {
 const WARM_LIGHT_ANCHOR_H = 65;   // amber/golden
 const COOL_LIGHT_ANCHOR_H = 205;  // cyan/sky
 
+// Cool convergence is reduced to prevent mint/aqua on warm base colors
+// This multiplier only applies when temperature < 0
+const COOL_CONVERGENCE_DAMPING = 0.35;
+
 // Hue stability thresholds - prevents odd casts when chroma is very low
 // Below CHROMA_FLOOR, hue shift is fully frozen (color is nearly neutral)
 // Between FLOOR and REF, hue shift is progressively damped
@@ -177,6 +181,7 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
 
   // Generate the ramp
   const ramp = [];
+  let prevL = 0; // Track previous step's L for monotonic enforcement
   for (let i = 0; i < steps; i++) {
     const L = lightnessValues[i];
 
@@ -215,19 +220,36 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
       // Convergence weight: kicks in near the top third, scales with temperature
       const wPos = smoothstep(0.6, 1.0, highlightPosition);
       const wTemp = Math.pow(Math.abs(temperature), 0.7);
-      const w = wPos * wTemp * config.convergenceStrength;
+      let w = wPos * wTemp * config.convergenceStrength;
 
       // Choose anchor based on temperature sign
       const anchorHue = temperature > 0 ? WARM_LIGHT_ANCHOR_H : COOL_LIGHT_ANCHOR_H;
+
+      // Reduce cool convergence to prevent mint/aqua highlights on warm base colors
+      if (temperature < 0) {
+        w *= COOL_CONVERGENCE_DAMPING;
+      }
 
       // Blend toward anchor using shortest arc
       H = blendHueDegrees(H, anchorHue, w);
     }
 
-    const C = targetChroma;
+    // Accelerate chroma falloff near lightest steps to prevent mint/aqua highlights
+    // Only affects highlights (relativePosition > 0), leaves shadows/midtones unchanged
+    const highlightFactor = Math.max(0, relativePosition);
+    const highlightChromaFalloff = 1 - Math.pow(highlightFactor, 2.2);
+    const C = targetChroma * highlightChromaFalloff;
 
     // Clamp to sRGB gamut
     const clamped = clampToSrgbGamut({ L, C, H });
+
+    // Enforce monotonic lightness: if gamut clamp made this step darker than
+    // previous, nudge it slightly lighter to maintain order (no resorting)
+    if (clamped.L <= prevL) {
+      clamped.L = prevL + 0.001;
+    }
+    prevL = clamped.L;
+
     ramp.push(clamped);
   }
 

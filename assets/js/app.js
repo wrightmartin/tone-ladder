@@ -287,9 +287,10 @@ function updatePreview() {
 
   // Generate ramp for preview
   // Temperature mapping is handled internally by the color model
+  // Ramp is generated in correct order (darkest → lightest) by construction
   try {
     const rawRamp = generateRamp(baseHex, temperature, steps, mode);
-    state.preview.rampHexes = sortByLightness(rawRamp);
+    state.preview.rampHexes = rawRamp;
     state.preview.slugLabel = labelToSlug(label || 'untitled');
     renderPreview();
   } catch (e) {
@@ -432,8 +433,9 @@ function handleGenerate() {
 
   // Generate fresh ramp
   // Temperature mapping is handled internally by the color model
+  // Ramp is generated in correct order (darkest → lightest) by construction
   const rawRamp = generateRamp(baseHex, temperature, steps, mode);
-  const rampHexes = sortByLightness(rawRamp);
+  const rampHexes = rawRamp;
 
   // Create entry and add to history
   const entry = history.createEntry(label.trim(), baseHex, temperature, steps, mode, rampHexes);
