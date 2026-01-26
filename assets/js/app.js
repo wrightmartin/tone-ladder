@@ -126,13 +126,13 @@ function sortByLightness(hexArray) {
 // ==========================================================================
 
 /**
- * Render preview ramp swatches
+ * Render preview ladder swatches
  */
 function renderPreview() {
   const { rampHexes } = state.preview;
 
   if (!rampHexes || rampHexes.length === 0) {
-    dom.previewRamp.innerHTML = '<p class="history-empty">Tweak settings to see your ramp</p>';
+    dom.previewRamp.innerHTML = '<p class="history-empty">Tweak settings to see your ladder</p>';
     dom.exportPanel.hidden = true;
     return;
   }
@@ -288,7 +288,7 @@ function updatePreview() {
   }
   dom.inputHex.classList.remove('is-invalid');
 
-  // Generate ramp for preview
+  // Generate ladder for preview
   // Temperature mapping is handled internally by the color model
   // Ramp is generated in correct order (darkest → lightest) by construction
   try {
@@ -297,7 +297,7 @@ function updatePreview() {
     state.preview.slugLabel = labelToSlug(label || 'untitled');
     renderPreview();
   } catch (e) {
-    console.error('Failed to generate ramp:', e);
+    console.error('Failed to generate ladder:', e);
   }
 }
 
@@ -312,7 +312,7 @@ function loadEntry(entry) {
   state.input.steps = entry.steps;
   state.input.mode = entry.mode;
 
-  // Load the stored ramp directly (do not regenerate)
+  // Load the stored ladder directly (do not regenerate)
   state.preview.rampHexes = entry.rampHexes;
   state.preview.slugLabel = entry.slugLabel;
 
@@ -434,7 +434,7 @@ function handleAddToHistory() {
     return;
   }
 
-  // Use current preview ramp (already generated live)
+  // Use current preview ladder (already generated live)
   const rampHexes = state.preview.rampHexes;
   if (!rampHexes || rampHexes.length === 0) {
     return;
@@ -518,7 +518,7 @@ function handleUndo() {
  * Handle clear all button
  */
 function handleClearAll() {
-  if (confirm('Are you sure? This will clear all recent and starred ramps.')) {
+  if (confirm('Are you sure? This will clear all recent and starred ladders.')) {
     history.clearAll();
     renderHistory();
   }
