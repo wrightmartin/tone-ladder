@@ -8,6 +8,7 @@
 import { generateRamp } from './colorModels/index.js';
 import { hexToOklch } from './colorModels/convert.js';
 import * as history from './history.js';
+import { generateFactualLabel, getDisplayLabel, generateTokenPrefix } from './history.js';
 
 // ==========================================================================
 // State
@@ -16,14 +17,14 @@ import * as history from './history.js';
 const state = {
   input: {
     baseHex: '#2F6FED',
-    label: 'Ocean Blue',
+    label: '',
     temperature: 0.25,
     steps: 9,
     mode: 'painterly'
   },
   preview: {
     rampHexes: null,
-    slugLabel: null
+    tokenPrefix: null
   }
 };
 
@@ -67,19 +68,6 @@ const dom = {
 // ==========================================================================
 // Utilities
 // ==========================================================================
-
-/**
- * Generate slug from label
- * Rules: lowercase, spaces to hyphens, remove non-alphanumeric, collapse repeated hyphens
- */
-function labelToSlug(label) {
-  return label
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-}
 
 /**
  * Normalise hex input (ensure # prefix, uppercase)
@@ -151,13 +139,13 @@ function renderPreview() {
  * Render export code
  */
 function renderExport() {
-  const { rampHexes, slugLabel } = state.preview;
-  if (!rampHexes || !slugLabel) return;
+  const { rampHexes, tokenPrefix } = state.preview;
+  if (!rampHexes || !tokenPrefix) return;
 
   const format = dom.exportFormatSelect.value;
   const prefix = format === 'long' ? '--color-' : '--';
 
-  const lines = rampHexes.map((hex, i) => `${prefix}${slugLabel}-${i}: ${hex};`);
+  const lines = rampHexes.map((hex, i) => `${prefix}${tokenPrefix}-${i}: ${hex};`);
   dom.exportCode.textContent = lines.join('\n');
 }
 
@@ -186,19 +174,23 @@ function renderRecent() {
 
   dom.recentEmpty.hidden = true;
   dom.recentList.innerHTML = recent.map(entry => {
-    const isStarred = history.isStarred(entry);
+    const starred = history.isStarred(entry);
+    const factualLabel = generateFactualLabel(entry);
+    const customLabel = entry.customLabel || entry.label || null; // Legacy support
+    const hasCustomLabel = customLabel && customLabel.trim();
+
     return `
       <li class="history-entry" data-id="${entry.id}">
         <div class="history-entry__header">
           <div class="history-entry__info">
-            <div class="history-entry__label">${escapeHtml(entry.label)}</div>
-            <div class="history-entry__hex">${entry.baseHex}</div>
+            <div class="history-entry__label">${escapeHtml(factualLabel)}</div>
+            ${hasCustomLabel ? `<div class="history-entry__custom">${escapeHtml(customLabel)}</div>` : ''}
           </div>
           <div class="history-entry__actions">
-            <button type="button" class="btn-icon btn-icon--star ${isStarred ? 'is-starred' : ''}"
+            <button type="button" class="btn-icon btn-icon--star ${starred ? 'is-starred' : ''}"
                     data-action="star" data-id="${entry.id}"
-                    title="${isStarred ? 'Unstar' : 'Star'}">
-              ${isStarred ? '\u2605' : '\u2606'}
+                    title="${starred ? 'Unstar' : 'Star'}">
+              ${starred ? '\u2605' : '\u2606'}
             </button>
             <button type="button" class="btn-icon btn-icon--remove"
                     data-action="remove" data-id="${entry.id}"
@@ -226,24 +218,30 @@ function renderStarred() {
   }
 
   dom.starredEmpty.hidden = true;
-  dom.starredList.innerHTML = starred.map(entry => `
-    <li class="history-entry" data-id="${entry.id}" data-source="starred">
-      <div class="history-entry__header">
-        <div class="history-entry__info">
-          <div class="history-entry__label">${escapeHtml(entry.label)}</div>
-          <div class="history-entry__hex">${entry.baseHex}</div>
+  dom.starredList.innerHTML = starred.map(entry => {
+    const factualLabel = generateFactualLabel(entry);
+    const customLabel = entry.customLabel || entry.label || null; // Legacy support
+    const hasCustomLabel = customLabel && customLabel.trim();
+
+    return `
+      <li class="history-entry" data-id="${entry.id}" data-source="starred">
+        <div class="history-entry__header">
+          <div class="history-entry__info">
+            <div class="history-entry__label">${escapeHtml(factualLabel)}</div>
+            ${hasCustomLabel ? `<div class="history-entry__custom">${escapeHtml(customLabel)}</div>` : ''}
+          </div>
+          <div class="history-entry__actions">
+            <button type="button" class="btn-icon btn-icon--star is-starred"
+                    data-action="unstar" data-id="${entry.id}"
+                    title="Unstar">
+              \u2605
+            </button>
+          </div>
         </div>
-        <div class="history-entry__actions">
-          <button type="button" class="btn-icon btn-icon--star is-starred"
-                  data-action="unstar" data-id="${entry.id}"
-                  title="Unstar">
-            \u2605
-          </button>
-        </div>
-      </div>
-      ${renderSwatchStrip(entry.rampHexes)}
-    </li>
-  `).join('');
+        ${renderSwatchStrip(entry.rampHexes)}
+      </li>
+    `;
+  }).join('');
 }
 
 /**
@@ -294,7 +292,7 @@ function updatePreview() {
   try {
     const rawRamp = generateRamp(baseHex, temperature, steps, mode);
     state.preview.rampHexes = rawRamp;
-    state.preview.slugLabel = labelToSlug(label || 'untitled');
+    state.preview.tokenPrefix = generateTokenPrefix(label, baseHex, temperature, mode, steps);
     renderPreview();
   } catch (e) {
     console.error('Failed to generate ladder:', e);
@@ -305,21 +303,26 @@ function updatePreview() {
  * Load an entry into the input/preview state (does not generate)
  */
 function loadEntry(entry) {
+  // Get custom label (with legacy support)
+  const customLabel = entry.customLabel || entry.label || '';
+
   // Update state
   state.input.baseHex = entry.baseHex;
-  state.input.label = entry.label;
+  state.input.label = customLabel;
   state.input.temperature = entry.temperature;
   state.input.steps = entry.steps;
   state.input.mode = entry.mode;
 
   // Load the stored ladder directly (do not regenerate)
   state.preview.rampHexes = entry.rampHexes;
-  state.preview.slugLabel = entry.slugLabel;
+  // Use stored tokenPrefix or generate from entry settings (legacy support)
+  state.preview.tokenPrefix = entry.tokenPrefix ||
+    generateTokenPrefix(entry.customLabel || entry.label, entry.baseHex, entry.temperature, entry.mode, entry.steps);
 
   // Update UI inputs
   dom.inputHex.value = entry.baseHex;
   dom.inputColorPicker.value = entry.baseHex;
-  dom.inputLabel.value = entry.label;
+  dom.inputLabel.value = customLabel;
   dom.inputTemperature.value = entry.temperature;
   dom.temperatureDisplay.textContent = formatTemperature(entry.temperature);
 
@@ -370,7 +373,8 @@ function handleColorPicker(e) {
  */
 function handleLabelInput(e) {
   state.input.label = e.target.value;
-  state.preview.slugLabel = labelToSlug(e.target.value || 'untitled');
+  const { baseHex, temperature, steps, mode } = state.input;
+  state.preview.tokenPrefix = generateTokenPrefix(e.target.value, baseHex, temperature, mode, steps);
   renderExport();
 }
 
@@ -423,14 +427,9 @@ function handleModeToggle(e) {
 function handleAddToHistory() {
   const { baseHex, label, temperature, steps, mode } = state.input;
 
-  // Validate
+  // Validate hex only (label is optional)
   if (!isValidHex(baseHex)) {
     dom.inputHex.focus();
-    return;
-  }
-
-  if (!label.trim()) {
-    dom.inputLabel.focus();
     return;
   }
 
@@ -441,20 +440,24 @@ function handleAddToHistory() {
   }
 
   // Create entry and add to history
+  // Label is optional - pass trimmed value or empty string
   const entry = history.createEntry(label.trim(), baseHex, temperature, steps, mode, rampHexes);
-  history.addToRecent(entry);
+  const wasAdded = history.addToRecent(entry);
 
-  // Update slug in preview state
-  state.preview.slugLabel = entry.slugLabel;
+  if (wasAdded) {
+    // Update token prefix in preview state
+    state.preview.tokenPrefix = entry.tokenPrefix;
 
-  renderPreview();
-  renderHistory();
+    renderPreview();
+    renderHistory();
 
-  // Show brief feedback
-  dom.addFeedback.hidden = false;
-  setTimeout(() => {
-    dom.addFeedback.hidden = true;
-  }, 1500);
+    // Show brief feedback
+    dom.addFeedback.hidden = false;
+    setTimeout(() => {
+      dom.addFeedback.hidden = true;
+    }, 1500);
+  }
+  // If not added (duplicate), silent no-op
 }
 
 /**

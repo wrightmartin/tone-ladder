@@ -27,8 +27,8 @@
         </div>
 
         <div class="input-group">
-          <label for="input-label">Label</label>
-          <input type="text" id="input-label" placeholder="Ocean Blue" required>
+          <label for="input-label">Label <span class="label-hint">(optional)</span></label>
+          <input type="text" id="input-label" placeholder="e.g. Ocean Blue">
         </div>
 
         <div class="input-group">
@@ -76,13 +76,14 @@
       <!-- Export Panel -->
       <section class="panel panel--export" id="export-panel" hidden>
         <h2 class="panel__title">Export CSS Variables</h2>
+        <p class="export-hint">Add a label above for friendlier token names</p>
 
         <div class="export-format">
           <div class="export-header">
             <label for="export-format-select">Format</label>
             <select id="export-format-select">
-              <option value="short">--{slug}-{step}</option>
-              <option value="long">--color-{slug}-{step}</option>
+              <option value="short">--{label}-{step}</option>
+              <option value="long">--color-{label}-{step}</option>
             </select>
           </div>
           <pre class="export-code" id="export-code"></pre>

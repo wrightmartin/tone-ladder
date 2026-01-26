@@ -126,6 +126,11 @@ input, select {
   justify-content: space-between;
 }
 
+.label-hint {
+  font-weight: 400;
+  color: #999999;
+}
+
 .input-row {
   display: flex;
   gap: 8px;
@@ -414,6 +419,15 @@ input[type=range]::-moz-range-thumb {
   color: #666666;
 }
 
+.history-entry__custom {
+  font-size: 0.75rem;
+  color: #888888;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .history-entry__actions {
   display: flex;
   gap: 2px;
@@ -458,6 +472,13 @@ input[type=range]::-moz-range-thumb {
 .history-actions {
   padding-top: 8px;
   border-top: 1px solid #f0f0f0;
+}
+
+.export-hint {
+  font-size: 0.75rem;
+  color: #888888;
+  margin: 0 0 12px 0;
+  font-style: italic;
 }
 
 .export-format {

@@ -90,12 +90,12 @@ function generateId() {
 }
 
 /**
- * Generate slug from label
+ * Generate CSS-safe token from label
  * Rules: lowercase, spaces to hyphens, remove non-alphanumeric, collapse repeated hyphens
  * @param {string} label
  * @returns {string}
  */
-function labelToSlug(label) {
+function labelToToken(label) {
   return label
     .toLowerCase()
     .replace(/\s+/g, '-')           // spaces to hyphens
@@ -105,21 +105,77 @@ function labelToSlug(label) {
 }
 
 /**
+ * Generate a deterministic token prefix for CSS export
+ * If customLabel provided: use CSS-safe version of label
+ * If empty: generate from factual settings (tl-{hex}-{temp}-{mode}-{steps})
+ *
+ * @param {string} customLabel - User-provided label (may be empty)
+ * @param {string} baseHex - Base hex color
+ * @param {number} temperature - Temperature value
+ * @param {string} mode - 'conservative' or 'painterly'
+ * @param {number} steps - Step count
+ * @returns {string}
+ */
+export function generateTokenPrefix(customLabel, baseHex, temperature, mode, steps) {
+  // If label provided, use CSS-safe version
+  if (customLabel && customLabel.trim()) {
+    return labelToToken(customLabel.trim());
+  }
+
+  // Generate deterministic fallback from settings
+  // Format: tl-{hex}-{temp}-{mode}-{steps}
+  const hex = baseHex.replace('#', '').toLowerCase();
+  const tempSign = temperature >= 0 ? 'w' : 'c'; // w=warm, c=cool
+  const tempVal = Math.abs(temperature).toFixed(2).replace('.', '');
+  const modeShort = mode === 'conservative' ? 'cons' : 'paint';
+
+  return `tl-${hex}-${tempSign}${tempVal}-${modeShort}-${steps}`;
+}
+
+/**
+ * Generate a factual label from entry settings
+ * Format: #HEX · ±temp · Mode · steps
+ * @param {Object} entry
+ * @returns {string}
+ */
+export function generateFactualLabel(entry) {
+  const tempStr = entry.temperature >= 0 ? `+${entry.temperature.toFixed(2)}` : entry.temperature.toFixed(2);
+  const modeStr = entry.mode.charAt(0).toUpperCase() + entry.mode.slice(1);
+  return `${entry.baseHex} · ${tempStr} · ${modeStr} · ${entry.steps}`;
+}
+
+/**
+ * Get display label for an entry
+ * Returns custom label if provided, otherwise factual label
+ * @param {Object} entry
+ * @returns {string}
+ */
+export function getDisplayLabel(entry) {
+  if (entry.customLabel && entry.customLabel.trim()) {
+    return entry.customLabel;
+  }
+  // Legacy support: check old 'label' field
+  if (entry.label && entry.label.trim()) {
+    return entry.label;
+  }
+  return generateFactualLabel(entry);
+}
+
+/**
  * Create a new history entry
  *
- * @param {string} label - Display label (stored exactly as entered)
+ * @param {string} customLabel - User-provided label (can be empty string)
  * @param {string} baseHex - Base hex color
  * @param {number} temperature - Temperature value
  * @param {number} steps - Number of steps (9 or 11)
  * @param {string} mode - 'conservative' or 'painterly'
- * @param {string[]} rampHexes - Generated ramp hex values (stored, not regenerated)
+ * @param {string[]} rampHexes - Generated ladder hex values (stored, not regenerated)
  * @returns {Object} HistoryEntry
  */
-export function createEntry(label, baseHex, temperature, steps, mode, rampHexes) {
-  return {
+export function createEntry(customLabel, baseHex, temperature, steps, mode, rampHexes) {
+  const entry = {
     id: generateId(),
-    label: label,
-    slugLabel: labelToSlug(label),
+    customLabel: customLabel || null,
     baseHex: baseHex,
     temperature: temperature,
     steps: steps,
@@ -127,26 +183,55 @@ export function createEntry(label, baseHex, temperature, steps, mode, rampHexes)
     rampHexes: rampHexes,
     createdAt: Date.now()
   };
+  // Add tokenPrefix for CSS export
+  entry.tokenPrefix = generateTokenPrefix(customLabel, baseHex, temperature, mode, steps);
+  return entry;
 }
 
 /**
- * Generate a stable key from entry settings (label + baseHex + temperature + steps + mode)
- * Used for de-duplication and starred equivalence checks
+ * Generate a stable key from entry settings (baseHex + temperature + steps + mode)
+ * Used for starred equivalence checks
  * @param {Object} entry
  * @returns {string}
  */
 function entryKey(entry) {
-  return `${entry.label}|${entry.baseHex}|${entry.temperature}|${entry.steps}|${entry.mode}`;
+  return `${entry.baseHex}|${entry.temperature}|${entry.steps}|${entry.mode}`;
 }
 
 /**
- * Check if two entries are duplicates (same label + baseHex + temperature + steps + mode)
+ * Check if two entries have equivalent settings (for starred comparison)
  * @param {Object} a
  * @param {Object} b
  * @returns {boolean}
  */
-function isDuplicate(a, b) {
+function hasEquivalentSettings(a, b) {
   return entryKey(a) === entryKey(b);
+}
+
+/**
+ * Check if two entries are exact duplicates (same settings AND same output)
+ * Used for immediate duplicate prevention
+ * @param {Object} a
+ * @param {Object} b
+ * @returns {boolean}
+ */
+function isExactDuplicate(a, b) {
+  if (!a || !b) return false;
+
+  // Compare settings
+  if (a.baseHex !== b.baseHex) return false;
+  if (a.temperature !== b.temperature) return false;
+  if (a.steps !== b.steps) return false;
+  if (a.mode !== b.mode) return false;
+
+  // Compare output (exact array match)
+  if (!a.rampHexes || !b.rampHexes) return false;
+  if (a.rampHexes.length !== b.rampHexes.length) return false;
+  for (let i = 0; i < a.rampHexes.length; i++) {
+    if (a.rampHexes[i] !== b.rampHexes[i]) return false;
+  }
+
+  return true;
 }
 
 /**
@@ -157,22 +242,27 @@ function persist() {
 }
 
 /**
- * Add entry to recent list (a "generation" commit)
+ * Add entry to recent list (a snapshot commit)
  *
- * - Clears undo buffer (new generation clears undo)
- * - Removes any duplicate entry (same label+baseHex+temperature+steps+mode)
+ * - Checks if exact duplicate of most recent entry (no-op if so)
+ * - Clears undo buffer
  * - Adds new entry at the front (newest first)
  * - Enforces max 10 entries
  * - Persists to storage
  *
  * @param {Object} entry - HistoryEntry to add
+ * @returns {boolean} True if entry was added, false if duplicate (no-op)
  */
 export function addToRecent(entry) {
-  // Clear undo buffer on new generation
-  undoBuffer = null;
+  // Check for exact duplicate of most recent entry only
+  const mostRecent = recent[0];
+  if (isExactDuplicate(entry, mostRecent)) {
+    // No-op: don't add duplicate, don't show error
+    return false;
+  }
 
-  // Remove duplicates
-  recent = recent.filter(existing => !isDuplicate(existing, entry));
+  // Clear undo buffer on new snapshot
+  undoBuffer = null;
 
   // Add to front
   recent.unshift(entry);
@@ -183,6 +273,7 @@ export function addToRecent(entry) {
   }
 
   persist();
+  return true;
 }
 
 /**
@@ -252,14 +343,14 @@ export function clearUndoBuffer() {
 
 /**
  * Check if an entry (or entry with given ID) is starred
- * Uses key equivalence (label+baseHex+temperature+steps+mode), not ID
+ * Uses settings equivalence (baseHex+temperature+steps+mode), not ID
  * @param {string|Object} idOrEntry - Entry ID or entry object
  * @returns {boolean}
  */
 export function isStarred(idOrEntry) {
   const entry = typeof idOrEntry === 'string' ? findEntry(idOrEntry) : idOrEntry;
   if (!entry) return false;
-  return starred.some(s => isDuplicate(s, entry));
+  return starred.some(s => hasEquivalentSettings(s, entry));
 }
 
 /**
