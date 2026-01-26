@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Tone Ladder is a live colour playground for generating stepped colour ladders with painterly hue behaviour based on light temperature.">
+  <title>Tone Ladder — About</title>
+  <link rel="stylesheet" href="./assets/css/styles.css">
+</head>
+<body>
+  <div class="app app--about">
+    <header class="header">
+      <div class="header__top">
+        <h1>Tone Ladder</h1>
+        <nav class="nav">
+          <a href="./index.html" class="nav__link">Home</a>
+          <a href="./about.html" class="nav__link nav__link--active">About</a>
+        </nav>
+      </div>
+      <p class="tagline">Painterly colour ladders for UI design</p>
+    </header>
+
+    <main class="about">
+      <article class="about__content">
+        <section class="about__section">
+          <h2>What it is</h2>
+          <p>Tone Ladder is a live colour playground for generating stepped colour ladders that behave more like painted light than traditional UI ramps.</p>
+        </section>
+
+        <section class="about__section">
+          <h2>Why it exists</h2>
+          <p>Most UI colour systems treat colour like engineering: pick a base colour, then march towards white and black. The result is often predictable, flat, and strangely lifeless.</p>
+          <p>Tone Ladder starts from a different premise: in painting, light has a temperature, and highlights and shadows tend to shift in hue as well as in brightness. That subtle hue behaviour is a big part of what makes colour feel rich and "real".</p>
+          <p>Tone Ladder tries to capture that effect in a form UI designers can use.</p>
+        </section>
+
+        <section class="about__section">
+          <h2>How it works</h2>
+          <p>You give Tone Ladder a base colour and choose:</p>
+          <ul>
+            <li><strong>Temperature</strong> (cool ↔ warm): controls the direction of hue bias</li>
+            <li><strong>Mode</strong>
+              <ul>
+                <li><em>Conservative</em>: usable out of the box for most product UI</li>
+                <li><em>Painterly</em>: pushes further to demonstrate the effect (and occasionally challenge taste)</li>
+              </ul>
+            </li>
+          </ul>
+          <p>The preview updates live as you tweak settings. When you find something you like, you can save a snapshot to history and export the ladder as CSS tokens.</p>
+        </section>
+
+        <section class="about__section">
+          <h2>What to expect</h2>
+          <ul>
+            <li>The top and bottom steps stay tinted when temperature isn't neutral — because UI often uses the lightest tones the most.</li>
+            <li>Tone Ladder aims for coherence: no odd single-step surprises or wild category jumps.</li>
+          </ul>
+        </section>
+
+        <section class="about__section">
+          <h2>Status</h2>
+          <p>Tone Ladder is an evolving experiment in designer tooling. If something feels off, that's useful feedback — colour perception is the whole game.</p>
+        </section>
+      </article>
+    </main>
+  </div>
+</body>
+</html>

@@ -54,6 +54,12 @@ input, select {
   padding-bottom: 16px;
   border-bottom: 1px solid #f0f0f0;
 }
+.header__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+}
 .header h1 {
   font-size: 1.5rem;
   font-weight: 700;
@@ -63,6 +69,26 @@ input, select {
   margin: 4px 0 0;
   color: #666666;
   font-size: 0.875rem;
+}
+
+.nav {
+  display: flex;
+  gap: 16px;
+}
+.nav__link {
+  font-size: 0.875rem;
+  color: #666666;
+  text-decoration: none;
+  padding: 2px 0;
+  border-bottom: 1px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.nav__link:hover {
+  color: #1a1a1a;
+}
+.nav__link--active {
+  color: #1a1a1a;
+  border-bottom-color: #1a1a1a;
 }
 
 .main {
@@ -554,6 +580,63 @@ input[type=range]::-moz-range-thumb {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* About page */
+.app--about {
+  display: block;
+  max-width: 640px;
+}
+
+.about {
+  padding-top: 32px;
+}
+
+.about__content {
+  line-height: 1.7;
+}
+
+.about__section {
+  margin-bottom: 32px;
+}
+.about__section:last-child {
+  margin-bottom: 0;
+}
+
+.about__section h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0 0 12px 0;
+  color: #1a1a1a;
+}
+
+.about__section p {
+  margin: 0 0 12px 0;
+  color: #333333;
+}
+.about__section p:last-child {
+  margin-bottom: 0;
+}
+
+.about__section ul {
+  margin: 0 0 12px 0;
+  padding-left: 20px;
+  color: #333333;
+}
+.about__section ul:last-child {
+  margin-bottom: 0;
+}
+
+.about__section li {
+  margin-bottom: 6px;
+}
+.about__section li:last-child {
+  margin-bottom: 0;
+}
+
+.about__section ul ul {
+  margin-top: 6px;
+  margin-bottom: 0;
 }
 
 @media (max-width: 768px) {
