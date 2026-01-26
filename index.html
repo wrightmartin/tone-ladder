@@ -10,7 +10,7 @@
   <div class="app">
     <header class="header">
       <h1>Tone Ladder</h1>
-      <p class="tagline">Hue-shift tonal ramp generator</p>
+      <p class="tagline">Live hue-shift colour playground</p>
     </header>
 
     <main class="main">
@@ -59,12 +59,15 @@
           </div>
         </div>
 
-        <button type="button" id="btn-generate" class="btn btn--primary">Generate</button>
+        <div class="action-row">
+          <button type="button" id="btn-generate" class="btn btn--primary">Add to History</button>
+          <span class="add-feedback" id="add-feedback" hidden>Added!</span>
+        </div>
       </section>
 
       <!-- Preview Panel -->
       <section class="panel panel--preview">
-        <h2 class="panel__title">Preview</h2>
+        <h2 class="panel__title">Preview <span class="preview-status">(live)</span></h2>
         <div class="ramp" id="preview-ramp">
           <!-- Swatches rendered by JS -->
         </div>
@@ -101,7 +104,7 @@
         <ul class="history-list" id="recent-list">
           <!-- Recent entries rendered by JS -->
         </ul>
-        <p class="history-empty" id="recent-empty">No recent ramps</p>
+        <p class="history-empty" id="recent-empty">No saved ramps yet</p>
       </section>
 
       <section class="panel panel--starred">

@@ -58,7 +58,10 @@ const dom = {
   exportFormatSelect: document.getElementById('export-format-select'),
   exportCode: document.getElementById('export-code'),
   btnCopy: document.getElementById('btn-copy'),
-  copyFeedback: document.getElementById('copy-feedback')
+  copyFeedback: document.getElementById('copy-feedback'),
+
+  // Feedback
+  addFeedback: document.getElementById('add-feedback')
 };
 
 // ==========================================================================
@@ -129,7 +132,7 @@ function renderPreview() {
   const { rampHexes } = state.preview;
 
   if (!rampHexes || rampHexes.length === 0) {
-    dom.previewRamp.innerHTML = '<p class="history-empty">Adjust settings and generate a ramp</p>';
+    dom.previewRamp.innerHTML = '<p class="history-empty">Tweak settings to see your ramp</p>';
     dom.exportPanel.hidden = true;
     return;
   }
@@ -415,9 +418,9 @@ function handleModeToggle(e) {
 }
 
 /**
- * Handle Generate button - commits to Recent (a "generation")
+ * Handle "Add to History" button - saves current preview as a snapshot
  */
-function handleGenerate() {
+function handleAddToHistory() {
   const { baseHex, label, temperature, steps, mode } = state.input;
 
   // Validate
@@ -431,22 +434,27 @@ function handleGenerate() {
     return;
   }
 
-  // Generate fresh ramp
-  // Temperature mapping is handled internally by the color model
-  // Ramp is generated in correct order (darkest → lightest) by construction
-  const rawRamp = generateRamp(baseHex, temperature, steps, mode);
-  const rampHexes = rawRamp;
+  // Use current preview ramp (already generated live)
+  const rampHexes = state.preview.rampHexes;
+  if (!rampHexes || rampHexes.length === 0) {
+    return;
+  }
 
   // Create entry and add to history
   const entry = history.createEntry(label.trim(), baseHex, temperature, steps, mode, rampHexes);
   history.addToRecent(entry);
 
-  // Update preview with the committed ramp
-  state.preview.rampHexes = rampHexes;
+  // Update slug in preview state
   state.preview.slugLabel = entry.slugLabel;
 
   renderPreview();
   renderHistory();
+
+  // Show brief feedback
+  dom.addFeedback.hidden = false;
+  setTimeout(() => {
+    dom.addFeedback.hidden = true;
+  }, 1500);
 }
 
 /**
@@ -586,7 +594,7 @@ function init() {
     btn.addEventListener('click', handleModeToggle);
   });
 
-  dom.btnGenerate.addEventListener('click', handleGenerate);
+  dom.btnGenerate.addEventListener('click', handleAddToHistory);
 
   // Bind events - History
   dom.recentList.addEventListener('click', handleHistoryClick);
