@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Debug Hue Shifts</title>
+  <style>
+    body { font-family: monospace; background: #1a1a1a; color: #e0e0e0; padding: 2rem; }
+    h1 { color: #fff; margin-bottom: 1rem; }
+    .instructions { color: #888; margin-bottom: 2rem; }
+  </style>
+</head>
+<body>
+  <h1>Debug Hue Shifts</h1>
+  <p class="instructions">Open the browser console (Cmd+Option+J / Ctrl+Shift+J) to see output.</p>
+
+  <script type="module">
+    import { debugHue } from './assets/js/colorModels/index.js';
+
+    console.clear();
+
+    // Run debug for #2F6FED at temp +1 (painterly mode)
+    console.log('========================================');
+    console.log('TEST 1: Base #2F6FED, Temp +1, Painterly');
+    console.log('========================================');
+    debugHue('#2F6FED', 1, 9, 'painterly');
+
+    // Run debug for #2F6FED at temp -1 (painterly mode)
+    console.log('========================================');
+    console.log('TEST 2: Base #2F6FED, Temp -1, Painterly');
+    console.log('========================================');
+    debugHue('#2F6FED', -1, 9, 'painterly');
+  </script>
+</body>
+</html>

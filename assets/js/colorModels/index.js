@@ -6,7 +6,7 @@
  */
 
 import { hexToOklch } from './convert.js';
-import { generateOklchRamp, rampToHex, validateHueDeltas, compareModesConsole, debugGamutMapping, debugHighlightStability } from './hueShift.js';
+import { generateOklchRamp, rampToHex, validateHueDeltas, compareModesConsole, debugGamutMapping, debugHighlightStability, debugHueShifts } from './hueShift.js';
 
 // Default values
 const DEFAULT_BASE_HEX = '#2F6FED';
@@ -143,6 +143,26 @@ export function debugGamut(
  */
 export function debugHighlights(baseHex = '#2F6FED') {
   return debugHighlightStability(baseHex);
+}
+
+/**
+ * Debug helper: Print per-step H, Δh from base, and shadow/highlight label
+ * Plus summary of average Δh sign for shadows vs highlights
+ *
+ * Run in console: ToneLadder.debugHue('#2F6FED', 1, 9, 'painterly')
+ *
+ * @param {string} baseHex - Base color as hex
+ * @param {number} temperature - Light temperature (-1 to +1)
+ * @param {number} steps - Number of steps (9 or 11)
+ * @param {string} mode - 'conservative' or 'painterly'
+ */
+export function debugHue(
+  baseHex = DEFAULT_BASE_HEX,
+  temperature = DEFAULT_TEMPERATURE,
+  steps = DEFAULT_STEPS,
+  mode = DEFAULT_MODE
+) {
+  return debugHueShifts(baseHex, temperature, steps, mode);
 }
 
 // Export defaults for reference

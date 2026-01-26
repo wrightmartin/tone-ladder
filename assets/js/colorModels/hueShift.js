@@ -63,6 +63,15 @@ const TEMP_RESPONSE_EXPONENT = 1.6;
 const L_MIN = 0.08;
 const L_MAX = 0.98;
 
+// Yellow family guardrail - prevents cool-biased yellow highlights from drifting into green/mint
+// Yellow family: hues approximately 60°-110° (yellow through yellow-green)
+// For these bases under cool light, highlights must not exceed the limit
+// Internal limits are set 2-3° below the contract limit (120°) to account for hex quantization noise
+const YELLOW_FAMILY_HUE_MIN = 60;
+const YELLOW_FAMILY_HUE_MAX = 110;
+const YELLOW_HIGHLIGHT_HUE_LIMIT_CONSERVATIVE = 110;  // Tighter for conservative (cream-yellow)
+const YELLOW_HIGHLIGHT_HUE_LIMIT_PAINTERLY = 115;     // Slightly looser for painterly
+
 /**
  * Hue stability damping factor
  * Returns 0-1 multiplier for hue shift based on target chroma
@@ -240,24 +249,22 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
     // Calculate target chroma FIRST (needed for hue stability check)
     const targetChroma = calculateChroma(baseOklch.C, relativePosition, config);
 
-    // Calculate raw hue shift
-    // For warm light (+temperature):
-    //   - Highlights (positive position) shift toward warm (yellow ~80deg)
-    //   - Shadows (negative position) shift toward cool (blue/purple ~270deg)
-    // For cool light (-temperature): opposite
-    const rawHueShift = calculateHueShift(
+    // Calculate biased hue toward anchor
+    // Warm light: highlights -> warm anchor (65°), shadows -> cool anchor (205°)
+    // Cool light: opposite
+    // Convert maxShift (degrees) to blend weight (0-1 scale)
+    const maxBlendWeight = maxShift / 90;
+    const rawBiasedHue = calculateBiasedHue(
       baseOklch.H,
       relativePosition,
       temperature,
-      maxShift
+      maxBlendWeight
     );
 
     // Apply hue stability damping when chroma is low
-    // This prevents odd pink/lavender casts near white
+    // Blend between base hue and biased hue based on stability factor
     const stabilityFactor = getHueStabilityFactor(targetChroma);
-    const hueShift = rawHueShift * stabilityFactor;
-
-    let H = normalizeHue(baseOklch.H + hueShift);
+    let H = blendHueDegrees(baseOklch.H, rawBiasedHue, stabilityFactor);
 
     // Calculate chroma with highlight falloff
     // This collapses chroma toward white, preventing saturated highlights
@@ -292,6 +299,29 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
       }
     }
 
+    // Yellow family guardrail: prevent cool-biased yellow highlights from drifting into green/mint
+    // Applies only when: temp < 0, base is yellow family, and we're in top 3 highlights
+    const isYellowFamily = baseOklch.H >= YELLOW_FAMILY_HUE_MIN && baseOklch.H <= YELLOW_FAMILY_HUE_MAX;
+    const isTop3Highlight = i >= steps - 3;
+    if (isYellowFamily && temperature < 0 && isTop3Highlight) {
+      const hueLimit = mode === 'conservative'
+        ? YELLOW_HIGHLIGHT_HUE_LIMIT_CONSERVATIVE
+        : YELLOW_HIGHLIGHT_HUE_LIMIT_PAINTERLY;
+      if (H > hueLimit && H < 180) {  // Only clamp if drifting into green (not wrapping around)
+        H = hueLimit;
+      }
+    }
+
+    // Enforce chroma floor at extreme endpoints when temperature !== 0
+    // This guarantees tinted endpoints (no neutral grey) per behaviour contract
+    const isEndpoint = (i === 0 || i === steps - 1);
+    if (isEndpoint && temperature !== 0) {
+      // Small floor proportional to temperature magnitude
+      // 0.015 at full temperature gives visible tint without being garish
+      const chromaFloor = 0.015 * Math.abs(temperature);
+      C = Math.max(C, chromaFloor);
+    }
+
     // Gamut clamp: reduce chroma to fit sRGB while preserving L and H
     // Monotonicity is enforced earlier in lightnessValues, so no post-clamp L nudging needed
     const clamped = clampToSrgbGamut({ L, C, H });
@@ -303,32 +333,44 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
 }
 
 /**
- * Calculate hue shift for a given position in the ramp
+ * Calculate biased hue for a given position in the ramp
  *
- * Warm light creates the classic "warm highlights, cool shadows" look:
- * - Yellow-orange highlights (shift toward ~60-80deg on color wheel)
- * - Blue-purple shadows (shift toward ~240-280deg)
+ * Uses anchor-bias approach (not rotation around base hue):
+ * - Warm light (+temp): highlights bias toward warm anchor (65°), shadows toward cool anchor (205°)
+ * - Cool light (-temp): highlights bias toward cool anchor, shadows toward warm anchor
+ * - At midpoint (relativePosition === 0): hue remains the base hue
  *
- * The shift is applied as a delta from the base hue, not an absolute target.
+ * @param {number} baseHue - Base color hue in degrees
+ * @param {number} relativePosition - Position in ramp (-1 to +1)
+ * @param {number} temperature - Light temperature (-1 to +1)
+ * @param {number} maxBlendWeight - Maximum blend weight toward anchor (0-1)
+ * @returns {number} Final hue in degrees (0-360)
  */
-function calculateHueShift(baseHue, relativePosition, temperature, maxShift) {
-  if (temperature === 0) return 0;
+function calculateBiasedHue(baseHue, relativePosition, temperature, maxBlendWeight) {
+  if (temperature === 0 || relativePosition === 0) return normalizeHue(baseHue);
 
-  // Magnitude increases toward extremes (slight ease-in)
-  const magnitude = Math.pow(Math.abs(relativePosition), 1.1);
+  // Determine which anchor to bias toward based on position and temperature
+  // Warm light: highlights -> warm (65°), shadows -> cool (205°)
+  // Cool light: highlights -> cool (205°), shadows -> warm (65°)
+  const isHighlight = relativePosition > 0;
+  const isWarmLight = temperature > 0;
 
-  // Apply perceptual temperature curve: gentle near neutral, strong at extremes
-  const mappedTemp = mapTemperature(temperature);
+  let anchorHue;
+  if (isWarmLight) {
+    anchorHue = isHighlight ? WARM_ANCHOR_H : COOL_ANCHOR_H;
+  } else {
+    anchorHue = isHighlight ? COOL_ANCHOR_H : WARM_ANCHOR_H;
+  }
 
-  // Direction: negative = shift toward warm (lower hue), positive = shift toward cool (higher hue)
-  // Warm light (+temp): highlights shift toward warm (-), shadows shift toward cool (+)
-  // Cool light (-temp): highlights shift toward cool (+), shadows shift toward warm (-)
-  const direction = -Math.sign(mappedTemp) * relativePosition;
-  const tempStrength = Math.abs(mappedTemp);
+  // Blend weight scales with:
+  // - distance from midpoint (raised to power for ease-in)
+  // - temperature strength (mapped through response curve)
+  const positionWeight = Math.pow(Math.abs(relativePosition), 1.1);
+  const tempStrength = Math.abs(mapTemperature(temperature));
+  const blendWeight = positionWeight * tempStrength * maxBlendWeight;
 
-  const shiftAmount = direction * magnitude * tempStrength * maxShift;
-
-  return shiftAmount;
+  // Blend toward anchor via shortest arc
+  return blendHueDegrees(baseHue, anchorHue, blendWeight);
 }
 
 /**
@@ -573,6 +615,82 @@ export function debugGamutMapping(baseHex, temperature, steps, mode) {
  * @param {string} baseHex - Base color to test (default: #2F6FED)
  * @returns {Object} Test results with pass/fail status
  */
+/**
+ * Debug helper: Print per-step H, Δh from base, and shadow/highlight label
+ * Plus summary of average Δh sign for shadows vs highlights
+ *
+ * @param {string} baseHex - Base color as hex
+ * @param {number} temperature - Light temperature (-1 to +1)
+ * @param {number} steps - Number of steps (9 or 11)
+ * @param {string} mode - 'conservative' or 'painterly'
+ */
+export function debugHueShifts(baseHex, temperature, steps, mode) {
+  const baseOklch = hexToOklch(baseHex);
+  const ramp = generateOklchRamp(baseOklch, temperature, steps, mode);
+  const midIndex = Math.floor(steps / 2);
+  const baseHue = baseOklch.H;
+
+  const shadowDeltas = [];
+  const highlightDeltas = [];
+
+  console.log('');
+  console.log(`=== Debug Hue Shifts ===`);
+  console.log(`Base: ${baseHex} | H: ${baseHue.toFixed(1)}°`);
+  console.log(`Temp: ${temperature > 0 ? '+' : ''}${temperature} | Steps: ${steps} | Mode: ${mode}`);
+  console.log('');
+  console.log('Step | H        | Δh from base | Label');
+  console.log('-----|----------|--------------|----------');
+
+  ramp.forEach((color, i) => {
+    const delta = hueDifference(baseHue, color.H);
+    let label;
+
+    if (i < midIndex) {
+      label = 'shadow';
+      shadowDeltas.push(delta);
+    } else if (i === midIndex) {
+      label = 'BASE';
+    } else {
+      label = 'highlight';
+      highlightDeltas.push(delta);
+    }
+
+    const deltaStr = (delta >= 0 ? '+' : '') + delta.toFixed(1) + '°';
+    console.log(
+      `  ${String(i).padStart(2)} | ${color.H.toFixed(1).padStart(6)}° | ${deltaStr.padStart(12)} | ${label}`
+    );
+  });
+
+  // Summary: average Δh sign for shadows vs highlights
+  const avgShadowDelta = shadowDeltas.length > 0
+    ? shadowDeltas.reduce((a, b) => a + b, 0) / shadowDeltas.length
+    : 0;
+  const avgHighlightDelta = highlightDeltas.length > 0
+    ? highlightDeltas.reduce((a, b) => a + b, 0) / highlightDeltas.length
+    : 0;
+
+  const shadowSign = avgShadowDelta > 0 ? 'positive (+)' : avgShadowDelta < 0 ? 'negative (-)' : 'neutral (0)';
+  const highlightSign = avgHighlightDelta > 0 ? 'positive (+)' : avgHighlightDelta < 0 ? 'negative (-)' : 'neutral (0)';
+
+  console.log('');
+  console.log('=== Summary ===');
+  console.log(`Shadows avg Δh:    ${avgShadowDelta >= 0 ? '+' : ''}${avgShadowDelta.toFixed(1)}° -> ${shadowSign}`);
+  console.log(`Highlights avg Δh: ${avgHighlightDelta >= 0 ? '+' : ''}${avgHighlightDelta.toFixed(1)}° -> ${highlightSign}`);
+  console.log('');
+
+  return {
+    baseHex,
+    baseHue,
+    temperature,
+    steps,
+    mode,
+    shadowDeltas,
+    highlightDeltas,
+    avgShadowDelta,
+    avgHighlightDelta
+  };
+}
+
 export function debugHighlightStability(baseHex = '#2F6FED') {
   const testCases = [
     { temp: 0.9, steps: 9, mode: 'conservative' },

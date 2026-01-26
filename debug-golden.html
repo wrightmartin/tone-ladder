@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Golden Tests</title>
+  <style>
+    body { font-family: monospace; background: #1a1a1a; color: #e0e0e0; padding: 2rem; }
+    h1 { color: #fff; }
+    .instructions { color: #888; margin-bottom: 2rem; }
+  </style>
+</head>
+<body>
+  <h1>Golden Tests</h1>
+  <p class="instructions">Open the browser console (Cmd+Option+J / Ctrl+Shift+J) to see output.</p>
+
+  <script type="module">
+    import { generateRamp } from './assets/js/colorModels/index.js';
+    import { hexToOklch } from './assets/js/colorModels/convert.js';
+
+    const goldenCases = [
+      { base: '#2F6FED', temp: +1, steps: 11, mode: 'conservative' },
+      { base: '#2F6FED', temp: -1, steps: 11, mode: 'conservative' },
+      { base: '#2F6FED', temp: +1, steps: 11, mode: 'painterly' },
+      { base: '#2F6FED', temp: -1, steps: 11, mode: 'painterly' },
+      { base: '#B51A00', temp: +1, steps: 11, mode: 'painterly' },
+      { base: '#B51A00', temp: -1, steps: 11, mode: 'painterly' },
+      { base: '#FEC700', temp: +1, steps: 11, mode: 'conservative' },
+      { base: '#FEC700', temp: -1, steps: 11, mode: 'conservative' },
+      { base: '#FEC700', temp: -1, steps: 11, mode: 'painterly' },  // Yellow cool painterly
+    ];
+
+    // Yellow family guardrail constants
+    const YELLOW_HUE_MIN = 60;
+    const YELLOW_HUE_MAX = 110;
+    const YELLOW_HIGHLIGHT_HUE_LIMIT = 120;  // Above this = "too green"
+
+    function runGoldenTests() {
+      console.clear();
+      console.log('='.repeat(60));
+      console.log('GOLDEN TESTS');
+      console.log('='.repeat(60));
+      console.log('');
+
+      for (const tc of goldenCases) {
+        const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);
+        const midIndex = Math.floor(tc.steps / 2);
+        const keyIndices = [0, 1, midIndex, tc.steps - 2, tc.steps - 1];
+
+        const tempLabel = tc.temp > 0 ? `+${tc.temp}` : `${tc.temp}`;
+        console.log(`--- ${tc.base} | temp=${tempLabel} | steps=${tc.steps} | ${tc.mode} ---`);
+        console.log('Hex ramp:', ramp.join(' '));
+        console.log('');
+        console.log('Key steps (L, C, H):');
+
+        for (const i of keyIndices) {
+          const hex = ramp[i];
+          const oklch = hexToOklch(hex);
+          const label = i === 0 ? 'darkest' :
+                        i === 1 ? 'dark' :
+                        i === midIndex ? 'mid (base)' :
+                        i === tc.steps - 2 ? 'light' :
+                        'lightest';
+          console.log(
+            `  [${String(i).padStart(2)}] ${hex} | L=${oklch.L.toFixed(3)} C=${oklch.C.toFixed(3)} H=${oklch.H.toFixed(1).padStart(5)} | ${label}`
+          );
+        }
+        console.log('');
+      }
+
+      // === VERIFICATION CHECKS ===
+      console.log('='.repeat(60));
+      console.log('VERIFICATION CHECKS');
+      console.log('='.repeat(60));
+      console.log('');
+
+      // Check 1: Yellow family guardrail (cool temp, top 3 highlights)
+      console.log('1. YELLOW FAMILY GUARDRAIL (cool temp highlights)');
+      const yellowCoolCases = goldenCases.filter(tc =>
+        tc.base === '#FEC700' && tc.temp < 0
+      );
+
+      for (const tc of yellowCoolCases) {
+        const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);
+        const top3Indices = [tc.steps - 3, tc.steps - 2, tc.steps - 1];
+        let allPass = true;
+
+        console.log(`   ${tc.mode}:`);
+        for (const i of top3Indices) {
+          const hex = ramp[i];
+          const oklch = hexToOklch(hex);
+          const tooGreen = oklch.H > YELLOW_HIGHLIGHT_HUE_LIMIT;
+          if (tooGreen) allPass = false;
+          const status = tooGreen ? 'FAIL (green)' : 'ok';
+          console.log(`     [${i}] ${hex} H=${oklch.H.toFixed(1)} ${status}`);
+        }
+        console.log(`   Result: ${allPass ? 'PASS' : 'FAIL - mint/green in highlights'}`);
+        console.log('');
+      }
+
+      // Check 2: Endpoint tinting
+      console.log('2. ENDPOINT TINTING (C > 0 when temp !== 0)');
+      let endpointPass = true;
+      for (const tc of goldenCases) {
+        if (tc.temp === 0) continue;
+        const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);
+        const darkC = hexToOklch(ramp[0]).C;
+        const lightC = hexToOklch(ramp[tc.steps - 1]).C;
+        if (darkC < 0.005 || lightC < 0.005) {
+          console.log(`   FAIL: ${tc.base} temp=${tc.temp} ${tc.mode} - dark C=${darkC.toFixed(3)}, light C=${lightC.toFixed(3)}`);
+          endpointPass = false;
+        }
+      }
+      console.log(`   Result: ${endpointPass ? 'PASS' : 'FAIL'}`);
+      console.log('');
+
+      // Check 3: Blue warm/cool shadow direction
+      console.log('3. BLUE SHADOW DIRECTION (warm should be cooler than cool)');
+      const blueWarm = generateRamp('#2F6FED', +1, 11, 'painterly');
+      const blueCool = generateRamp('#2F6FED', -1, 11, 'painterly');
+      const warmShadowH = hexToOklch(blueWarm[0]).H;
+      const coolShadowH = hexToOklch(blueCool[0]).H;
+      const warmDistToCool = Math.min(Math.abs(warmShadowH - 205), 360 - Math.abs(warmShadowH - 205));
+      const coolDistToCool = Math.min(Math.abs(coolShadowH - 205), 360 - Math.abs(coolShadowH - 205));
+      const shadowPass = warmDistToCool < coolDistToCool;
+      console.log(`   Warm shadow H=${warmShadowH.toFixed(1)} (dist to cool anchor: ${warmDistToCool.toFixed(1)})`);
+      console.log(`   Cool shadow H=${coolShadowH.toFixed(1)} (dist to cool anchor: ${coolDistToCool.toFixed(1)})`);
+      console.log(`   Result: ${shadowPass ? 'PASS' : 'FAIL'}`);
+      console.log('');
+
+      console.log('='.repeat(60));
+      console.log('END GOLDEN TESTS');
+      console.log('='.repeat(60));
+    }
+
+    // Export for console access
+    window.runGoldenTests = runGoldenTests;
+
+    // Run on load
+    runGoldenTests();
+  </script>
+</body>
+</html>
