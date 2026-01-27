@@ -95,7 +95,19 @@ Greys reveal the colour of the light.
 
 ⸻
 
-7. Mode Intent
+7. Control Meaningfulness
+
+Tone Ladder controls must remain meaningful to a designer.
+	•	For base colours with visible chroma, changing temperature or mode should create a perceptible difference in the highlight region.
+	•	This requirement is chroma/headroom-aware:
+	•	If highlight steps have sufficient chroma to carry hue/saturation information, the difference must be perceptible (e.g. via OKLab ΔE above a small threshold).
+	•	If chroma collapses near-white (or guardrails/gamut limits compress variation), differences may legitimately converge — but the selected setting should still express itself in the highest-chroma highlight steps (typically just below the endpoint).
+
+Rationale: controls that silently collapse undermine trust, but the model must not be forced into artificial differences when the colour space has no meaningful room to express them.
+
+⸻
+
+8. Mode Intent
 	•	Conservative
 Looks better and could be used today without explanation.
 	•	Painterly
