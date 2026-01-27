@@ -24,15 +24,26 @@
       { base: '#2F6FED', temp: -1, steps: 11, mode: 'painterly' },
       { base: '#B51A00', temp: +1, steps: 11, mode: 'painterly' },
       { base: '#B51A00', temp: -1, steps: 11, mode: 'painterly' },
+      { base: '#E63B7A', temp: -1, steps: 11, mode: 'painterly' },  // Pink-red cool
       { base: '#FEC700', temp: +1, steps: 11, mode: 'conservative' },
       { base: '#FEC700', temp: -1, steps: 11, mode: 'conservative' },
       { base: '#FEC700', temp: -1, steps: 11, mode: 'painterly' },  // Yellow cool painterly
+      // Near-neutral temperature study tests (both modes)
+      { base: '#e9e9e9', temp: +1, steps: 11, mode: 'conservative' },  // Neutral warm conservative
+      { base: '#e9e9e9', temp: -1, steps: 11, mode: 'conservative' },  // Neutral cool conservative
+      { base: '#e9e9e9', temp: +1, steps: 11, mode: 'painterly' },     // Neutral warm painterly
+      { base: '#e9e9e9', temp: -1, steps: 11, mode: 'painterly' },     // Neutral cool painterly
     ];
 
     // Yellow family guardrail constants
     const YELLOW_HUE_MIN = 60;
     const YELLOW_HUE_MAX = 110;
     const YELLOW_HIGHLIGHT_HUE_LIMIT = 120;  // Above this = "too green"
+
+    // Red family guardrail constants
+    const RED_FORBIDDEN_HUE_MIN = 80;   // Start of green-ish zone
+    const RED_FORBIDDEN_HUE_MAX = 200;  // End of cyan zone
+    const RED_CHROMA_THRESHOLD = 0.015; // Only check if chroma is visible
 
     function runGoldenTests() {
       console.clear();
@@ -125,6 +136,134 @@
       console.log(`   Warm shadow H=${warmShadowH.toFixed(1)} (dist to cool anchor: ${warmDistToCool.toFixed(1)})`);
       console.log(`   Cool shadow H=${coolShadowH.toFixed(1)} (dist to cool anchor: ${coolDistToCool.toFixed(1)})`);
       console.log(`   Result: ${shadowPass ? 'PASS' : 'FAIL'}`);
+      console.log('');
+
+      // Check 4: Near-neutral temperature study
+      console.log('4. NEAR-NEUTRAL TEMPERATURE STUDY');
+
+      // Thresholds for neutral checks
+      const WARM_ANCHOR_H = 65;
+      const COOL_ANCHOR_H = 205;
+      const VISIBLE_TINT_C_MIN = 0.01;
+
+      // Helper to calculate distance to anchor (shortest arc)
+      function distToAnchor(hue, anchorHue) {
+        return Math.min(Math.abs(hue - anchorHue), 360 - Math.abs(hue - anchorHue));
+      }
+
+      const neutralCases = [
+        { base: '#e9e9e9', temp: +1, steps: 11, mode: 'conservative', label: 'Neutral warm conservative' },
+        { base: '#e9e9e9', temp: -1, steps: 11, mode: 'conservative', label: 'Neutral cool conservative' },
+        { base: '#e9e9e9', temp: +1, steps: 11, mode: 'painterly', label: 'Neutral warm painterly' },
+        { base: '#e9e9e9', temp: -1, steps: 11, mode: 'painterly', label: 'Neutral cool painterly' },
+      ];
+
+      let neutralAllPass = true;
+      for (const tc of neutralCases) {
+        const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);
+        const darkest = hexToOklch(ramp[0]);
+        const lightest = hexToOklch(ramp[tc.steps - 1]);
+
+        console.log(`   ${tc.label} (temp=${tc.temp > 0 ? '+1' : '-1'}):`);
+
+        // For warm light (temp > 0):
+        //   - darkest should be closer to cool anchor (205°)
+        //   - lightest should be closer to warm anchor (65°)
+        // For cool light (temp < 0): opposite
+
+        const warmAnchor = tc.temp > 0 ? WARM_ANCHOR_H : COOL_ANCHOR_H;  // Expected highlight anchor
+        const coolAnchor = tc.temp > 0 ? COOL_ANCHOR_H : WARM_ANCHOR_H;  // Expected shadow anchor
+
+        // Check darkest (shadow) - should bias toward coolAnchor
+        let shadowPass = true;
+        if (darkest.C >= VISIBLE_TINT_C_MIN) {
+          const distToCool = distToAnchor(darkest.H, coolAnchor);
+          const distToWarm = distToAnchor(darkest.H, warmAnchor);
+          shadowPass = distToCool < distToWarm;
+          console.log(`     Darkest: ${ramp[0]} L=${darkest.L.toFixed(3)} C=${darkest.C.toFixed(3)} H=${darkest.H.toFixed(1)}`);
+          console.log(`       dist to expected anchor (${coolAnchor}°): ${distToCool.toFixed(1)}° vs opposite: ${distToWarm.toFixed(1)}°`);
+          console.log(`       ${shadowPass ? 'ok' : 'FAIL'}`);
+        } else {
+          console.log(`     Darkest: ${ramp[0]} C=${darkest.C.toFixed(3)} (too low to check hue)`);
+        }
+
+        // Check lightest (highlight) - should bias toward warmAnchor
+        let highlightPass = true;
+        if (lightest.C >= VISIBLE_TINT_C_MIN) {
+          const distToWarm = distToAnchor(lightest.H, warmAnchor);
+          const distToCool = distToAnchor(lightest.H, coolAnchor);
+          highlightPass = distToWarm < distToCool;
+          console.log(`     Lightest: ${ramp[tc.steps - 1]} L=${lightest.L.toFixed(3)} C=${lightest.C.toFixed(3)} H=${lightest.H.toFixed(1)}`);
+          console.log(`       dist to expected anchor (${warmAnchor}°): ${distToWarm.toFixed(1)}° vs opposite: ${distToCool.toFixed(1)}°`);
+          console.log(`       ${highlightPass ? 'ok' : 'FAIL'}`);
+        } else {
+          console.log(`     Lightest: ${ramp[tc.steps - 1]} C=${lightest.C.toFixed(3)} (too low to check hue)`);
+        }
+
+        const casePass = shadowPass && highlightPass;
+        if (!casePass) neutralAllPass = false;
+        console.log(`   Result: ${casePass ? 'PASS' : 'FAIL'}`);
+        console.log('');
+      }
+
+      // Also show first 2 and last 2 steps for visual inspection
+      console.log('   Key steps for visual inspection:');
+      for (const tc of neutralCases) {
+        const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);
+        console.log(`   ${tc.label}:`);
+        console.log(`     Hex ramp: ${ramp.join(' ')}`);
+        for (const i of [0, 1, tc.steps - 2, tc.steps - 1]) {
+          const hex = ramp[i];
+          const oklch = hexToOklch(hex);
+          const label = i < 2 ? 'shadow' : 'highlight';
+          console.log(`     [${String(i).padStart(2)}] ${hex} | L=${oklch.L.toFixed(3)} C=${oklch.C.toFixed(3)} H=${oklch.H.toFixed(1).padStart(5)} | ${label}`);
+        }
+        console.log('');
+      }
+
+      // Check 5: Neutral mode separation (painterly > conservative)
+      console.log('5. NEUTRAL MODE SEPARATION (painterly should be stronger than conservative)');
+      const MODE_SEPARATION_RATIO = 1.3;  // painterly endpoint C should be at least 1.3x conservative
+      let modeSepPass = true;
+
+      for (const temp of [+1, -1]) {
+        const consRamp = generateRamp('#e9e9e9', temp, 11, 'conservative');
+        const paintRamp = generateRamp('#e9e9e9', temp, 11, 'painterly');
+
+        // Compare endpoint chroma (average of darkest and lightest)
+        const consEndpointC = (hexToOklch(consRamp[0]).C + hexToOklch(consRamp[10]).C) / 2;
+        const paintEndpointC = (hexToOklch(paintRamp[0]).C + hexToOklch(paintRamp[10]).C) / 2;
+        const ratio = paintEndpointC / consEndpointC;
+
+        const tempLabel = temp > 0 ? '+1' : '-1';
+        const pass = ratio >= MODE_SEPARATION_RATIO;
+        if (!pass) modeSepPass = false;
+
+        console.log(`   temp=${tempLabel}:`);
+        console.log(`     Conservative avg endpoint C: ${consEndpointC.toFixed(4)}`);
+        console.log(`     Painterly avg endpoint C:    ${paintEndpointC.toFixed(4)}`);
+        console.log(`     Ratio (P/C): ${ratio.toFixed(2)}x (need >= ${MODE_SEPARATION_RATIO}x)`);
+        console.log(`     ${pass ? 'ok' : 'FAIL'}`);
+      }
+      console.log(`   Result: ${modeSepPass ? 'PASS' : 'FAIL'}`);
+      console.log('');
+
+      // Check 6: Monotonic lightness (no wobble)
+      console.log('6. MONOTONIC LIGHTNESS (no wobble / dead rungs)');
+      let monotonicPass = true;
+      for (const tc of goldenCases) {
+        const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);
+        let prev = -Infinity;
+        for (let i = 0; i < ramp.length; i++) {
+          const L = hexToOklch(ramp[i]).L;
+          if (L <= prev) {
+            console.log(`   FAIL: ${tc.base} temp=${tc.temp} ${tc.mode} - step ${i} L=${L.toFixed(3)} <= prev L=${prev.toFixed(3)}`);
+            monotonicPass = false;
+          }
+          prev = L;
+        }
+      }
+      console.log(`   Result: ${monotonicPass ? 'PASS' : 'FAIL'}`);
       console.log('');
 
       console.log('='.repeat(60));

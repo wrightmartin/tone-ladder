@@ -24,13 +24,21 @@ const MODE_CONFIG = {
     maxHueShift: 18,        // degrees - noticeable, tasteful shift
     chromaRetention: 0.40,  // minimum chroma at extremes
     chromaCurveExponent: 1.0, // standard cosine falloff
-    convergenceStrength: 0.45 // highlight convergence toward light anchor
+    convergenceStrength: 0.45, // highlight convergence toward light anchor
+    // Near-neutral temperature study settings
+    neutralTintStrength: 0.35,    // multiplier on max tint (subtle for UI greys)
+    neutralCurveExponent: 1.5,    // higher = more concentrated at extremes, mid stays grey
+    neutralEndpointChromaFloor: 0.008  // smaller floor for subtle endpoints
   },
   painterly: {
     maxHueShift: 38,        // degrees - bold, dramatic artistic shifts
     chromaRetention: 0.28,  // allow strong desaturation for drama
     chromaCurveExponent: 0.8, // slower falloff, keeps saturation longer
-    convergenceStrength: 0.85 // stronger convergence for dramatic effect
+    convergenceStrength: 0.85, // stronger convergence for dramatic effect
+    // Near-neutral temperature study settings
+    neutralTintStrength: 0.65,    // multiplier on max tint (bolder but still grey)
+    neutralCurveExponent: 1.15,   // lower = more spread across ladder
+    neutralEndpointChromaFloor: 0.012  // slightly higher floor for visible endpoints
   }
 };
 
@@ -47,6 +55,15 @@ const COOL_ANCHOR_B = Math.sin(COOL_ANCHOR_H * Math.PI / 180); // ~-0.42
 // This prevents forcing hue direction when chroma is too low for it to matter
 const CONVERGENCE_CHROMA_MIN = 0.01;
 const CONVERGENCE_CHROMA_REF = 0.04;
+
+// Near-neutral temperature study thresholds
+// When base chroma is below NEUTRAL_BASE_C_MAX, treat it as a "neutral temperature study"
+// where temperature should be the dominant signal (light color theory on greys)
+const NEUTRAL_BASE_C_MAX = 0.03;
+// Minimum chroma for golden test assertions (below this, hue direction is meaningless)
+const VISIBLE_TINT_C_MIN = 0.01;
+// Maximum chroma to apply in neutral temperature study (keeps it tasteful)
+const NEUTRAL_TINT_C_MAX = 0.035;
 
 // Hue stability thresholds - prevents odd casts when chroma is very low
 // Below CHROMA_FLOOR, hue shift is fully frozen (color is nearly neutral)
@@ -237,6 +254,9 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
     }
   }
 
+  // Detect near-neutral base for temperature study treatment
+  const isNeutralBase = baseOklch.C <= NEUTRAL_BASE_C_MAX;
+
   // Generate the ramp
   const ramp = [];
   for (let i = 0; i < steps; i++) {
@@ -246,69 +266,118 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
     // Negative = darker than base, Positive = lighter than base
     const relativePosition = (i - midIndex) / midIndex;
 
-    // Calculate target chroma FIRST (needed for hue stability check)
-    const targetChroma = calculateChroma(baseOklch.C, relativePosition, config);
+    let H, C;
 
-    // Calculate biased hue toward anchor
-    // Warm light: highlights -> warm anchor (65°), shadows -> cool anchor (205°)
-    // Cool light: opposite
-    // Convert maxShift (degrees) to blend weight (0-1 scale)
-    const maxBlendWeight = maxShift / 90;
-    const rawBiasedHue = calculateBiasedHue(
-      baseOklch.H,
-      relativePosition,
-      temperature,
-      maxBlendWeight
-    );
+    // === NEAR-NEUTRAL TEMPERATURE STUDY BRANCH ===
+    // For near-neutral bases with temperature, create tint from scratch using anchors
+    // This implements "light color theory on greys": warm light creates warm highlights
+    // and cool shadows; cool light creates the opposite.
+    if (isNeutralBase && temperature !== 0) {
+      // Determine anchor direction based on temperature and position
+      // Warm light: highlights -> warm (65°), shadows -> cool (205°)
+      // Cool light: highlights -> cool (205°), shadows -> warm (65°)
+      const isHighlight = relativePosition > 0;
+      const isWarmLight = temperature > 0;
 
-    // Apply hue stability damping when chroma is low
-    // Blend between base hue and biased hue based on stability factor
-    const stabilityFactor = getHueStabilityFactor(targetChroma);
-    let H = blendHueDegrees(baseOklch.H, rawBiasedHue, stabilityFactor);
-
-    // Calculate chroma with highlight falloff
-    // This collapses chroma toward white, preventing saturated highlights
-    const highlightFactor = Math.max(0, relativePosition);
-    const highlightChromaFalloff = 1 - Math.pow(highlightFactor, 2.2);
-    let C = targetChroma * highlightChromaFalloff;
-
-    // Apply highlight convergence in OKLab space (more stable than hue-angle blending)
-    // Only for highlights (relativePosition > 0) and when temperature !== 0
-    if (relativePosition > 0 && temperature !== 0) {
-      const highlightPosition = relativePosition;
-
-      // Base convergence weight: kicks in near the top third, scales with temperature
-      const wPos = smoothstep(0.6, 1.0, highlightPosition);
-      const wTemp = Math.pow(Math.abs(temperature), 0.7);
-      let w = wPos * wTemp * config.convergenceStrength;
-
-      // Scale weight down as chroma collapses - don't force hue when C is tiny
-      // This is the key fix: no hue manipulation when there's no chroma to shift
-      const chromaFade = smoothstep(CONVERGENCE_CHROMA_MIN, CONVERGENCE_CHROMA_REF, C);
-      w *= chromaFade;
-
-      if (w > 0.001) {
-        // Choose anchor direction based on temperature sign
-        const anchorA = temperature > 0 ? WARM_ANCHOR_A : COOL_ANCHOR_A;
-        const anchorB = temperature > 0 ? WARM_ANCHOR_B : COOL_ANCHOR_B;
-
-        // Converge in OKLab space - stable even at low chroma
-        const converged = convergeInOklab({ L, C, H }, anchorA, anchorB, w);
-        H = converged.H;
-        C = converged.C;
+      let anchorA, anchorB;
+      if (isWarmLight) {
+        anchorA = isHighlight ? WARM_ANCHOR_A : COOL_ANCHOR_A;
+        anchorB = isHighlight ? WARM_ANCHOR_B : COOL_ANCHOR_B;
+      } else {
+        anchorA = isHighlight ? COOL_ANCHOR_A : WARM_ANCHOR_A;
+        anchorB = isHighlight ? COOL_ANCHOR_B : WARM_ANCHOR_B;
       }
-    }
 
-    // Yellow family guardrail: prevent cool-biased yellow highlights from drifting into green/mint
-    // Applies only when: temp < 0, base is yellow family, and we're in top 3 highlights
-    const isYellowFamily = baseOklch.H >= YELLOW_FAMILY_HUE_MIN && baseOklch.H <= YELLOW_FAMILY_HUE_MAX;
-    const isTop3Highlight = i >= steps - 3;
-    if (isYellowFamily && temperature < 0 && isTop3Highlight) {
-      const hueLimit = mode === 'conservative'
-        ? YELLOW_HIGHLIGHT_HUE_LIMIT_CONSERVATIVE
-        : YELLOW_HIGHLIGHT_HUE_LIMIT_PAINTERLY;
-      if (H > hueLimit && H < 180) {  // Only clamp if drifting into green (not wrapping around)
-        H = hueLimit;
+      // Chroma curve for neutrals: peaks at extremes, minimal at midpoint
+      // This creates the temperature study effect where shadows and highlights are tinted
+      // but the midtones remain relatively neutral
+      const absPos = Math.abs(relativePosition);
+      const tempStrength = Math.abs(temperature);
+
+      // Mode-aware curve: higher exponent = more concentrated at extremes
+      // Conservative uses higher exponent so mid stays closer to pure grey
+      // Painterly uses lower exponent for more spread across the ladder
+      const curveExponent = config.neutralCurveExponent;
+      const tintStrength = config.neutralTintStrength;
+
+      // Smooth chroma ramp: starts at 0 at midpoint, rises toward extremes
+      // Power curve controls how quickly tint builds from center
+      const chromaWeight = Math.pow(absPos, curveExponent) * tempStrength * tintStrength;
+
+      // Calculate target chroma: scale between 0 and max tint
+      // Mode strength already applied via tintStrength
+      C = chromaWeight * NEUTRAL_TINT_C_MAX;
+
+      // Calculate H from anchor direction
+      H = normalizeHue(Math.atan2(anchorB, anchorA) * (180 / Math.PI));
+
+    } else {
+      // === STANDARD BRANCH (non-neutral or neutral with temp=0) ===
+
+      // Calculate target chroma FIRST (needed for hue stability check)
+      const targetChroma = calculateChroma(baseOklch.C, relativePosition, config);
+
+      // Calculate biased hue toward anchor
+      // Warm light: highlights -> warm anchor (65°), shadows -> cool anchor (205°)
+      // Cool light: opposite
+      // Convert maxShift (degrees) to blend weight (0-1 scale)
+      const maxBlendWeight = maxShift / 90;
+      const rawBiasedHue = calculateBiasedHue(
+        baseOklch.H,
+        relativePosition,
+        temperature,
+        maxBlendWeight
+      );
+
+      // Apply hue stability damping when chroma is low
+      // Blend between base hue and biased hue based on stability factor
+      const stabilityFactor = getHueStabilityFactor(targetChroma);
+      H = blendHueDegrees(baseOklch.H, rawBiasedHue, stabilityFactor);
+
+      // Calculate chroma with highlight falloff
+      // This collapses chroma toward white, preventing saturated highlights
+      const highlightFactor = Math.max(0, relativePosition);
+      const highlightChromaFalloff = 1 - Math.pow(highlightFactor, 2.2);
+      C = targetChroma * highlightChromaFalloff;
+
+      // Apply highlight convergence in OKLab space (more stable than hue-angle blending)
+      // Only for highlights (relativePosition > 0) and when temperature !== 0
+      if (relativePosition > 0 && temperature !== 0) {
+        const highlightPosition = relativePosition;
+
+        // Base convergence weight: kicks in near the top third, scales with temperature
+        const wPos = smoothstep(0.6, 1.0, highlightPosition);
+        const wTemp = Math.pow(Math.abs(temperature), 0.7);
+        let w = wPos * wTemp * config.convergenceStrength;
+
+        // Scale weight down as chroma collapses - don't force hue when C is tiny
+        // This is the key fix: no hue manipulation when there's no chroma to shift
+        const chromaFade = smoothstep(CONVERGENCE_CHROMA_MIN, CONVERGENCE_CHROMA_REF, C);
+        w *= chromaFade;
+
+        if (w > 0.001) {
+          // Choose anchor direction based on temperature sign
+          const anchorA = temperature > 0 ? WARM_ANCHOR_A : COOL_ANCHOR_A;
+          const anchorB = temperature > 0 ? WARM_ANCHOR_B : COOL_ANCHOR_B;
+
+          // Converge in OKLab space - stable even at low chroma
+          const converged = convergeInOklab({ L, C, H }, anchorA, anchorB, w);
+          H = converged.H;
+          C = converged.C;
+        }
+      }
+
+      // Yellow family guardrail: prevent cool-biased yellow highlights from drifting into green/mint
+      // Applies only when: temp < 0, base is yellow family, and we're in top 3 highlights
+      const isYellowFamily = baseOklch.H >= YELLOW_FAMILY_HUE_MIN && baseOklch.H <= YELLOW_FAMILY_HUE_MAX;
+      const isTop3Highlight = i >= steps - 3;
+      if (isYellowFamily && temperature < 0 && isTop3Highlight) {
+        const hueLimit = mode === 'conservative'
+          ? YELLOW_HIGHLIGHT_HUE_LIMIT_CONSERVATIVE
+          : YELLOW_HIGHLIGHT_HUE_LIMIT_PAINTERLY;
+        if (H > hueLimit && H < 180) {  // Only clamp if drifting into green (not wrapping around)
+          H = hueLimit;
+        }
       }
     }
 
@@ -316,9 +385,12 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
     // This guarantees tinted endpoints (no neutral grey) per behaviour contract
     const isEndpoint = (i === 0 || i === steps - 1);
     if (isEndpoint && temperature !== 0) {
-      // Small floor proportional to temperature magnitude
-      // 0.015 at full temperature gives visible tint without being garish
-      const chromaFloor = 0.015 * Math.abs(temperature);
+      // For neutral bases, use mode-specific floor (smaller for conservative)
+      // For non-neutrals, use standard floor
+      const baseFloor = isNeutralBase
+        ? config.neutralEndpointChromaFloor
+        : 0.015;
+      const chromaFloor = baseFloor * Math.abs(temperature);
       C = Math.max(C, chromaFloor);
     }
 

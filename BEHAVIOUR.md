@@ -33,6 +33,36 @@ For yellow-family bases (OKLCH hue approximately 60°–110°):
 
 Rationale: A yellow ramp must still read as "yellow" at the light end. Mint/green highlights break ramp semantics (it becomes a palette, not a tonal ramp).
 
+## Red Family Highlight Guardrail (v1)
+
+For red-family bases (OKLCH hue in the wraparound range: approximately 320°–360° or 0°–50°):
+
+- The **lightest 3 steps must not drift into categorical non-red families**, especially green/cyan territory, when `temperature < 0`.
+- **Forbidden hue band**: approximately 80°–200° (yellow-green through cyan). If a highlight step lands in this band with visible chroma (C > 0.015), it fails the guardrail.
+- **Chroma-aware**: Only enforce when step chroma is above the visibility threshold. Near-zero chroma hues are perceptually meaningless.
+- Prioritise red-family retention (red/orange/pink/peach) over strong cool bias for red highlights.
+
+Rationale: A red ladder must still read as "red" or "warm" at the light end. Green/cyan highlights break ladder semantics entirely.
+
+## Near-Neutral Temperature Study
+
+For near-neutral bases (OKLCH chroma ≤ 0.03), temperature becomes the **dominant signal** rather than being dampened. This implements "light colour theory revealed on greys":
+
+- **Warm light (`temperature > 0`)**: highlights bias toward warm anchor (~65°, cream/paper), shadows bias toward cool anchor (~205°, blue-grey).
+- **Cool light (`temperature < 0`)**: highlights bias toward cool anchor (~205°, blue-grey), shadows bias toward warm anchor (~65°, brown/umber).
+
+Implementation details:
+- Chroma is created from scratch (not scaled from the near-zero base chroma)
+- Chroma curve peaks at extremes (endpoints) and is minimal at midpoint
+- Maximum tint chroma is capped at ~0.035 to keep it tasteful
+- Hue direction is set purely from anchor positions based on temperature and position
+
+This special handling **only activates** when:
+1. Base chroma ≤ `NEUTRAL_BASE_C_MAX` (0.03), AND
+2. Temperature ≠ 0
+
+For bases with visible chroma (> 0.03), the standard algorithm applies unchanged.
+
 ## Mode Goals
 
 - **Conservative**: "Looks better and could be used today without justification."
