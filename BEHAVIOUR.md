@@ -1,70 +1,102 @@
-# Tone Ladder Behaviour Contract
+Tone Ladder Behaviour Contract (refined)
 
-This document is the source of truth for algorithm behaviour. All changes must comply.
+This document defines observable behaviour.
+All algorithm changes must preserve these outcomes.
 
-## Endpoint Rules
+⸻
 
-- **If `temperature === 0`**: neutral/grey endpoints are allowed.
-- **If `temperature !== 0`**: the lightest and darkest steps **must** be tinted. Neutral grey/white/black endpoints are not allowed.
+1. Endpoint Behaviour
+	•	temperature === 0
+Endpoints may be neutral (grey/white/black).
+	•	temperature ≠ 0
+Endpoints must be tinted. Pure neutral endpoints are not allowed.
 
-- “Tinted” means C > ε, where ε is small but non-zero, not “visually colourful”.
+Notes:
+	•	“Tinted” means chroma > ε (small but non-zero), not “visibly colourful”.
 
-## Hue Rules
+⸻
 
-- **No categorical hue jumps**: e.g., green appearing in a red ladder, or mint in yellow. Adjacent hue drift is allowed.
-- **No pattern-breaking "dead rungs"**: no single-step anomalies in perceived lightness, saturation, or hue.
-- **Hue direction must be locally consistent**: adjacent steps must not reverse hue direction unless the reversal is perceptually invisible.
+2. Global Hue & Pattern Rules
+	•	No categorical hue jumps
+A ladder must not cross into a different colour family (e.g. green in red, mint in yellow).
+Small adjacent hue drift is allowed.
+	•	No pattern-breaking rungs
+No single step may appear lighter, duller, or hue-shifted out of sequence.
+	•	Local hue continuity
+Hue direction must remain locally consistent unless a reversal is perceptually invisible.
 
-## Temperature Semantics
+⸻
 
-Temperature controls the direction of hue bias, not rotation around the base:
+3. Temperature Semantics
 
-- **Warm light (`temperature > 0`)**: highlights bias toward warm (yellow ~65°), shadows bias toward cool (blue ~205°).
-- **Cool light (`temperature < 0`)**: highlights bias toward cool, shadows bias toward warm.
-- **Neutral light (`temperature === 0`)**: no hue shift; ramp is purely tonal.
+Temperature biases hue by light behaviour, not by rotating the base colour.
+	•	Warm light (temperature > 0)
+	•	Highlights bias warm (~65°, yellow/cream)
+	•	Shadows bias cool (~205°, blue)
+	•	Cool light (temperature < 0)
+	•	Highlights bias cool
+	•	Shadows bias warm
+	•	Neutral light (temperature === 0)
+	•	No hue bias; purely tonal ladder
 
-## Yellow Family Guardrail (Highlight Semantics)
+⸻
 
-For yellow-family bases (OKLCH hue approximately 60°–110°):
+4. Yellow Family Guardrail (Highlights)
 
-- The **lightest 3 steps must remain recognisably yellow/cream** and must not drift into green/mint territory, especially when `temperature < 0`.
-- Prioritise hue-family retention over strong cool bias for yellow highlights.
-- **This is a pass/fail condition**: above a pragmatic green-boundary threshold (currently ~120° in tests) in the top 3 highlights constitute a failure for yellow-family bases.
+Applies to yellow-family bases (≈ 60°–110°).
+	•	The top 3 highlights must remain recognisably yellow/cream.
+	•	They must not drift into green/mint territory, especially under cool light.
+	•	Pass/fail rule: hue beyond the green boundary (≈ 120° in tests) in the top 3 highlights is a failure.
 
-Rationale: A yellow ramp must still read as "yellow" at the light end. Mint/green highlights break ramp semantics (it becomes a palette, not a tonal ramp).
+Principle:
 
-## Red Family Highlight Guardrail
+A yellow ladder must still read as yellow at the light end.
+Green highlights turn a ladder into a palette.
 
-For red-family bases (OKLCH hue in the wraparound range: approximately 330°–360° or 0°–40°):
+⸻
 
-- The **lightest 3 steps must not drift into categorical non-red families**, especially green/khaki territory, when `temperature < 0`.
-- **Forbidden hue band**: approximately 80°–170° (yellow-green through green). If a highlight step lands in this band with visible chroma (C > 0.015), it fails the guardrail.
-- **Chroma-aware**: Only enforce when step chroma is above the visibility threshold. Near-zero chroma hues are perceptually meaningless.
-- When triggered, soft-clamp the hue to max 75° (warm/orange band) using `min(H, 75)`.
-- Prioritise red-family retention (red/orange/pink/peach) over strong cool bias for red highlights.
+5. Red Family Guardrail (Highlights)
 
-Rationale: A red ladder must still read as "red" or "warm" at the light end. Green/khaki highlights break ladder semantics entirely.
+Applies to red-family bases (≈ 330°–360° or 0°–40°).
+	•	The top 3 highlights must remain within the red family under cool light.
+	•	Forbidden band: ≈ 80°–170° (yellow-green → green).
+If a highlight enters this band with visible chroma, it fails.
+	•	Guardrail is chroma-aware: near-zero chroma hues are ignored.
+	•	When triggered, softly clamp hue to ≤ 75° (warm/orange range).
 
-## Near-Neutral Temperature Study
+Principle:
 
-For near-neutral bases (OKLCH chroma ≤ 0.03), temperature becomes the **dominant signal** rather than being dampened. This implements "light colour theory revealed on greys":
+A red ladder must still read as red or warm at the light end.
+Green/khaki highlights break ladder semantics.
 
-- **Warm light (`temperature > 0`)**: highlights bias toward warm anchor (~65°, cream/paper), shadows bias toward cool anchor (~205°, blue-grey).
-- **Cool light (`temperature < 0`)**: highlights bias toward cool anchor (~205°, blue-grey), shadows bias toward warm anchor (~65°, brown/umber).
+⸻
 
-Implementation details:
-- Chroma is created from scratch (not scaled from the near-zero base chroma)
-- Chroma curve peaks at extremes (endpoints) and is minimal at midpoint
-- Maximum tint chroma is capped at ~0.035 to keep it tasteful
-- Hue direction is set purely from anchor positions based on temperature and position
+6. Near-Neutral Base Behaviour
 
-This special handling **only activates** when:
-1. Base chroma ≤ `NEUTRAL_BASE_C_MAX` (0.03), AND
-2. Temperature ≠ 0
+For near-neutral bases (chroma ≤ 0.03), light colour becomes the dominant signal.
+	•	Warm light reveals warm highlights and cool shadows.
+	•	Cool light reveals cool highlights and warm shadows.
 
-For bases with visible chroma (> 0.03), the standard algorithm applies unchanged.
+Rules:
+	•	Chroma is generated (not scaled from the base).
+	•	Chroma peaks at the endpoints and collapses toward the midpoint.	
+	•	Maximum tint chroma is capped (~0.035).
+	•	Hue direction is set directly from light anchors.
 
-## Mode Goals
+This behaviour activates only when:
+	•	base chroma ≤ NEUTRAL_BASE_C_MAX, and
+	•	temperature ≠ 0
 
-- **Conservative**: "Looks better and could be used today without justification."
-- **Painterly**: "Clearly demonstrates the concept; coherent even if bold or uncomfortable."
+Otherwise, the standard algorithm applies unchanged.
+
+Principle:
+
+Greys reveal the colour of the light.
+
+⸻
+
+7. Mode Intent
+	•	Conservative
+Looks better and could be used today without explanation.
+	•	Painterly
+Clearly expresses the model, even if bold or uncomfortable.
