@@ -42,7 +42,7 @@
 
     // Red family guardrail constants
     const RED_FORBIDDEN_HUE_MIN = 80;   // Start of green-ish zone
-    const RED_FORBIDDEN_HUE_MAX = 200;  // End of cyan zone
+    const RED_FORBIDDEN_HUE_MAX = 170;  // End of green-ish zone
     const RED_CHROMA_THRESHOLD = 0.015; // Only check if chroma is visible
 
     function runGoldenTests() {
@@ -108,8 +108,36 @@
         console.log('');
       }
 
-      // Check 2: Endpoint tinting
-      console.log('2. ENDPOINT TINTING (C > 0 when temp !== 0)');
+      // Check 2: Red family guardrail (cool temp, top 3 highlights)
+      console.log('2. RED FAMILY GUARDRAIL (cool temp highlights)');
+      const redCoolCases = goldenCases.filter(tc =>
+        tc.base === '#B51A00' && tc.temp < 0
+      );
+
+      let redGuardrailPass = true;
+      for (const tc of redCoolCases) {
+        const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);
+        const top3Indices = [tc.steps - 3, tc.steps - 2, tc.steps - 1];
+
+        console.log(`   ${tc.mode}:`);
+        for (const i of top3Indices) {
+          const hex = ramp[i];
+          const oklch = hexToOklch(hex);
+          // Forbidden band: 80°-170° (green-ish zone)
+          const inForbiddenBand = oklch.H >= RED_FORBIDDEN_HUE_MIN && oklch.H <= RED_FORBIDDEN_HUE_MAX;
+          // Only check if chroma is visible
+          const hasVisibleChroma = oklch.C >= RED_CHROMA_THRESHOLD;
+          const fail = inForbiddenBand && hasVisibleChroma;
+          if (fail) redGuardrailPass = false;
+          const status = fail ? 'FAIL (green-ish)' : 'ok';
+          console.log(`     [${i}] ${hex} H=${oklch.H.toFixed(1)} C=${oklch.C.toFixed(3)} ${status}`);
+        }
+        console.log(`   Result: ${redGuardrailPass ? 'PASS' : 'FAIL - green/khaki in highlights'}`);
+        console.log('');
+      }
+
+      // Check 3: Endpoint tinting
+      console.log('3. ENDPOINT TINTING (C > 0 when temp !== 0)');
       let endpointPass = true;
       for (const tc of goldenCases) {
         if (tc.temp === 0) continue;
@@ -124,8 +152,8 @@
       console.log(`   Result: ${endpointPass ? 'PASS' : 'FAIL'}`);
       console.log('');
 
-      // Check 3: Blue warm/cool shadow direction
-      console.log('3. BLUE SHADOW DIRECTION (warm should be cooler than cool)');
+      // Check 4: Blue warm/cool shadow direction
+      console.log('4. BLUE SHADOW DIRECTION (warm should be cooler than cool)');
       const blueWarm = generateRamp('#2F6FED', +1, 11, 'painterly');
       const blueCool = generateRamp('#2F6FED', -1, 11, 'painterly');
       const warmShadowH = hexToOklch(blueWarm[0]).H;
@@ -138,8 +166,8 @@
       console.log(`   Result: ${shadowPass ? 'PASS' : 'FAIL'}`);
       console.log('');
 
-      // Check 4: Near-neutral temperature study
-      console.log('4. NEAR-NEUTRAL TEMPERATURE STUDY');
+      // Check 5: Near-neutral temperature study
+      console.log('5. NEAR-NEUTRAL TEMPERATURE STUDY');
 
       // Thresholds for neutral checks
       const WARM_ANCHOR_H = 65;
@@ -221,8 +249,8 @@
         console.log('');
       }
 
-      // Check 5: Neutral mode separation (painterly > conservative)
-      console.log('5. NEUTRAL MODE SEPARATION (painterly should be stronger than conservative)');
+      // Check 6: Neutral mode separation (painterly > conservative)
+      console.log('6. NEUTRAL MODE SEPARATION (painterly should be stronger than conservative)');
       const MODE_SEPARATION_RATIO = 1.3;  // painterly endpoint C should be at least 1.3x conservative
       let modeSepPass = true;
 
@@ -248,8 +276,8 @@
       console.log(`   Result: ${modeSepPass ? 'PASS' : 'FAIL'}`);
       console.log('');
 
-      // Check 6: Monotonic lightness (no wobble)
-      console.log('6. MONOTONIC LIGHTNESS (no wobble / dead rungs)');
+      // Check 7: Monotonic lightness (no wobble)
+      console.log('7. MONOTONIC LIGHTNESS (no wobble / dead rungs)');
       let monotonicPass = true;
       for (const tc of goldenCases) {
         const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);

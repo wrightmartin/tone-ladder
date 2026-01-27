@@ -89,6 +89,15 @@ const YELLOW_FAMILY_HUE_MAX = 110;
 const YELLOW_HIGHLIGHT_HUE_LIMIT_CONSERVATIVE = 110;  // Tighter for conservative (cream-yellow)
 const YELLOW_HIGHLIGHT_HUE_LIMIT_PAINTERLY = 115;     // Slightly looser for painterly
 
+// Red family guardrail - prevents cool-biased red highlights from drifting into green/khaki
+// Red family: hues in the wrap-around range (approximately 330°-360° or 0°-40°)
+// For these bases under cool light, highlights must not drift into the green-ish band
+const RED_FAMILY_HUE_UPPER_MIN = 330;  // Start of upper range (330°-360°)
+const RED_FAMILY_HUE_LOWER_MAX = 40;   // End of lower range (0°-40°)
+const RED_FORBIDDEN_HUE_MIN = 80;      // Start of forbidden green-ish band
+const RED_FORBIDDEN_HUE_MAX = 170;     // End of forbidden green-ish band
+const RED_HIGHLIGHT_HUE_LIMIT = 75;    // Max hue for red-family highlights (keeps in warm/orange band)
+
 /**
  * Hue stability damping factor
  * Returns 0-1 multiplier for hue shift based on target chroma
@@ -377,6 +386,17 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
           : YELLOW_HIGHLIGHT_HUE_LIMIT_PAINTERLY;
         if (H > hueLimit && H < 180) {  // Only clamp if drifting into green (not wrapping around)
           H = hueLimit;
+        }
+      }
+
+      // Red family guardrail: prevent cool-biased red highlights from drifting into green/khaki
+      // Applies only when: temp < 0, base is red family (wrap-around range), and we're in top 3 highlights
+      const isRedFamily = baseOklch.H >= RED_FAMILY_HUE_UPPER_MIN || baseOklch.H <= RED_FAMILY_HUE_LOWER_MAX;
+      if (isRedFamily && temperature < 0 && isTop3Highlight) {
+        // Check if hue has drifted into the forbidden green-ish band (80°-170°)
+        if (H >= RED_FORBIDDEN_HUE_MIN && H <= RED_FORBIDDEN_HUE_MAX) {
+          // Soft clamp: keep in warm/orange band [0°, 75°] by capping at the limit
+          H = Math.min(H, RED_HIGHLIGHT_HUE_LIMIT);
         }
       }
     }

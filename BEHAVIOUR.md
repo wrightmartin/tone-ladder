@@ -33,16 +33,17 @@ For yellow-family bases (OKLCH hue approximately 60°–110°):
 
 Rationale: A yellow ramp must still read as "yellow" at the light end. Mint/green highlights break ramp semantics (it becomes a palette, not a tonal ramp).
 
-## Red Family Highlight Guardrail (v1)
+## Red Family Highlight Guardrail
 
-For red-family bases (OKLCH hue in the wraparound range: approximately 320°–360° or 0°–50°):
+For red-family bases (OKLCH hue in the wraparound range: approximately 330°–360° or 0°–40°):
 
-- The **lightest 3 steps must not drift into categorical non-red families**, especially green/cyan territory, when `temperature < 0`.
-- **Forbidden hue band**: approximately 80°–200° (yellow-green through cyan). If a highlight step lands in this band with visible chroma (C > 0.015), it fails the guardrail.
+- The **lightest 3 steps must not drift into categorical non-red families**, especially green/khaki territory, when `temperature < 0`.
+- **Forbidden hue band**: approximately 80°–170° (yellow-green through green). If a highlight step lands in this band with visible chroma (C > 0.015), it fails the guardrail.
 - **Chroma-aware**: Only enforce when step chroma is above the visibility threshold. Near-zero chroma hues are perceptually meaningless.
+- When triggered, soft-clamp the hue to max 75° (warm/orange band) using `min(H, 75)`.
 - Prioritise red-family retention (red/orange/pink/peach) over strong cool bias for red highlights.
 
-Rationale: A red ladder must still read as "red" or "warm" at the light end. Green/cyan highlights break ladder semantics entirely.
+Rationale: A red ladder must still read as "red" or "warm" at the light end. Green/khaki highlights break ladder semantics entirely.
 
 ## Near-Neutral Temperature Study
 
