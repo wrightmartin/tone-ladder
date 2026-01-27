@@ -277,13 +277,13 @@ input[type=range]::-moz-range-thumb {
   padding: 8px 16px;
   font-size: 0.8125rem;
   font-weight: 500;
-  background: #ffffff;
+  background: #fafafa;
   border: none;
   color: #666666;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 .btn-toggle:hover {
-  background: #fafafa;
+  background: #ffffff;
 }
 .btn-toggle[aria-pressed=true] {
   background: #2F6FED;

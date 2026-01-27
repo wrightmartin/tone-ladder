@@ -315,13 +315,13 @@ input[type="range"] {
   padding: $spacing-sm $spacing-md;
   font-size: 0.8125rem;
   font-weight: 500;
-  background: $color-surface;
+  background: $color-bg;
   border: none;
   color: $color-text-muted;
   transition: background-color 0.15s ease, color 0.15s ease;
 
   &:hover {
-    background: $color-bg;
+    background: $color-surface;
   }
 
   &[aria-pressed="true"] {
