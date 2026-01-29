@@ -33,6 +33,11 @@
       { base: '#e9e9e9', temp: -1, steps: 11, mode: 'conservative' },  // Neutral cool conservative
       { base: '#e9e9e9', temp: +1, steps: 11, mode: 'painterly' },     // Neutral warm painterly
       { base: '#e9e9e9', temp: -1, steps: 11, mode: 'painterly' },     // Neutral cool painterly
+      // Teal/cyan - tests for mode expressivity (should currently FAIL)
+      { base: '#47868B', temp: +1, steps: 11, mode: 'conservative' },
+      { base: '#47868B', temp: -1, steps: 11, mode: 'conservative' },
+      { base: '#47868B', temp: +1, steps: 11, mode: 'painterly' },
+      { base: '#47868B', temp: -1, steps: 11, mode: 'painterly' },
     ];
 
     // Yellow family guardrail constants
@@ -292,6 +297,81 @@
         }
       }
       console.log(`   Result: ${monotonicPass ? 'PASS' : 'FAIL'}`);
+      console.log('');
+
+      // === TEAL MODE EXPRESSIVITY CHECK ===
+      // This check ensures mode control produces meaningful differences in highlights.
+      // Currently expected to FAIL - establishing the starting line before algorithm fixes.
+
+      console.log('8. TEAL MODE EXPRESSIVITY (painterly vs conservative highlights)');
+
+      // Thresholds
+      const C_VISIBLE = 0.012;       // Minimum chroma to consider hue meaningful
+      const DH_MIN_MODE = 4;         // Min hue difference for mode separation
+      const DC_MIN_MODE = 0.006;     // Min chroma difference for mode separation
+      const HIGHLIGHT_WINDOW = [7, 8, 9, 10];  // Steps to check
+
+      // Helper: calculate hue difference (shortest arc)
+      function hueDiff(h1, h2) {
+        const diff = Math.abs(h1 - h2);
+        return diff > 180 ? 360 - diff : diff;
+      }
+
+      const tealBase = '#47868B';
+      let tealModeExpressPass = true;
+
+      for (const temp of [+1, -1]) {
+        const tempLabel = temp > 0 ? 'warm' : 'cool';
+        const consRamp = generateRamp(tealBase, temp, 11, 'conservative');
+        const paintRamp = generateRamp(tealBase, temp, 11, 'painterly');
+
+        console.log(`   ${tempLabel} (temp=${temp > 0 ? '+1' : '-1'}):`);
+        console.log(`     Cons window:  ${HIGHLIGHT_WINDOW.map(i => consRamp[i]).join(' ')}`);
+        console.log(`     Paint window: ${HIGHLIGHT_WINDOW.map(i => paintRamp[i]).join(' ')}`);
+
+        // Check for chroma headroom and meaningful differences
+        let hasHeadroom = false;
+        let foundDifference = false;
+        let triggerStep = null;
+        let triggerReason = null;
+
+        for (const i of HIGHLIGHT_WINDOW) {
+          const consOklch = hexToOklch(consRamp[i]);
+          const paintOklch = hexToOklch(paintRamp[i]);
+
+          const bothVisible = consOklch.C >= C_VISIBLE && paintOklch.C >= C_VISIBLE;
+          if (bothVisible) hasHeadroom = true;
+
+          const dH = hueDiff(consOklch.H, paintOklch.H);
+          const dC = Math.abs(consOklch.C - paintOklch.C);
+
+          const lowCFlag = bothVisible ? '' : ' (low C)';
+          console.log(`     [${i}] cons H=${consOklch.H.toFixed(1)} C=${consOklch.C.toFixed(3)} | paint H=${paintOklch.H.toFixed(1)} C=${paintOklch.C.toFixed(3)} | ΔH=${dH.toFixed(1)} ΔC=${dC.toFixed(4)}${lowCFlag}`);
+
+          // Check for meaningful difference (only count hue diff when chroma is visible)
+          if (bothVisible && dH >= DH_MIN_MODE) {
+            foundDifference = true;
+            triggerStep = i;
+            triggerReason = `ΔH=${dH.toFixed(1)}° >= ${DH_MIN_MODE}°`;
+          }
+          if (dC >= DC_MIN_MODE) {
+            foundDifference = true;
+            triggerStep = i;
+            triggerReason = `ΔC=${dC.toFixed(4)} >= ${DC_MIN_MODE}`;
+          }
+        }
+
+        if (!hasHeadroom) {
+          console.log(`     SKIP: insufficient chroma headroom in highlight window`);
+        } else if (foundDifference) {
+          console.log(`     PASS: expressivity at step ${triggerStep} (${triggerReason})`);
+        } else {
+          console.log(`     FAIL: cons and paint too similar in highlights`);
+          tealModeExpressPass = false;
+        }
+        console.log('');
+      }
+      console.log(`   Result: ${tealModeExpressPass ? 'PASS' : 'FAIL'}`);
       console.log('');
 
       console.log('='.repeat(60));
