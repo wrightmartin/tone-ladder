@@ -18,27 +18,23 @@ import {
 // TUNABLE CONSTANTS - adjust these to calibrate mode behavior
 // =============================================================================
 
-// Mode configurations - tuned for visible separation between modes
+// Mode configurations
+// Modes differ ONLY by castStrength — the intensity of the warm/cool colour
+// cast applied away from the midpoint.  All other parameters are shared.
+// castStrength maps to the Photoshop reference model's "colour-cast layer opacity":
+//   0 → pure lightness ramp (no tint)   higher → stronger temperature tint
 const MODE_CONFIG = {
   conservative: {
-    maxHueShift: 18,        // degrees - noticeable, tasteful shift
-    chromaRetention: 0.40,  // minimum chroma at extremes
-    chromaCurveExponent: 1.0, // standard cosine falloff
-    convergenceStrength: 0.45, // highlight convergence toward light anchor
-    // Near-neutral temperature study settings
-    neutralTintStrength: 0.35,    // multiplier on max tint (subtle for UI greys)
-    neutralCurveExponent: 1.5,    // higher = more concentrated at extremes, mid stays grey
-    neutralEndpointChromaFloor: 0.008  // smaller floor for subtle endpoints
+    castStrength: 0.30,           // subtle tint for UI / product work
+    chromaRetention: 0.35,        // minimum chroma at extremes
+    chromaCurveExponent: 0.9,     // cosine falloff speed
+    neutralEndpointChromaFloor: 0.010
   },
   painterly: {
-    maxHueShift: 38,        // degrees - bold, dramatic artistic shifts
-    chromaRetention: 0.28,  // allow strong desaturation for drama
-    chromaCurveExponent: 0.8, // slower falloff, keeps saturation longer
-    convergenceStrength: 0.85, // stronger convergence for dramatic effect
-    // Near-neutral temperature study settings
-    neutralTintStrength: 0.65,    // multiplier on max tint (bolder but still grey)
-    neutralCurveExponent: 1.15,   // lower = more spread across ladder
-    neutralEndpointChromaFloor: 0.012  // slightly higher floor for visible endpoints
+    castStrength: 0.50,           // bolder tint for illustration / art direction
+    chromaRetention: 0.35,
+    chromaCurveExponent: 0.9,
+    neutralEndpointChromaFloor: 0.010
   }
 };
 
@@ -55,6 +51,11 @@ const COOL_ANCHOR_B = Math.sin(COOL_ANCHOR_H * Math.PI / 180); // ~-0.42
 // This prevents forcing hue direction when chroma is too low for it to matter
 const CONVERGENCE_CHROMA_MIN = 0.01;
 const CONVERGENCE_CHROMA_REF = 0.04;
+
+// Base convergence factor (scaled by castStrength at runtime)
+// Chosen so conservative (0.30 * 1.5 = 0.45) and painterly (0.50 * 1.5 = 0.75)
+// produce convergence weights comparable to the v1 algorithm.
+const CONVERGENCE_BASE = 1.5;
 
 // Near-neutral temperature study thresholds
 // When base chroma is below NEUTRAL_BASE_C_MAX, treat it as a "neutral temperature study"
@@ -86,8 +87,7 @@ const L_MAX = 0.98;
 // Internal limits are set 2-3° below the contract limit (120°) to account for hex quantization noise
 const YELLOW_FAMILY_HUE_MIN = 60;
 const YELLOW_FAMILY_HUE_MAX = 110;
-const YELLOW_HIGHLIGHT_HUE_LIMIT_CONSERVATIVE = 110;  // Tighter for conservative (cream-yellow)
-const YELLOW_HIGHLIGHT_HUE_LIMIT_PAINTERLY = 115;     // Slightly looser for painterly
+const YELLOW_HIGHLIGHT_HUE_LIMIT = 115;  // Unified — conservative cast is weaker so rarely reaches this
 
 // Red family guardrail - prevents cool-biased red highlights from drifting into green/khaki
 // Red family: hues in the wrap-around range (approximately 330°-360° or 0°-40°)
@@ -215,7 +215,6 @@ function convergeInOklab(oklch, anchorA, anchorB, weight) {
  */
 export function generateOklchRamp(baseOklch, temperature, steps, mode) {
   const config = MODE_CONFIG[mode] || MODE_CONFIG.painterly;
-  const maxShift = config.maxHueShift;
 
   // Find the midpoint index (where base color will be placed)
   const midIndex = Math.floor(steps / 2);
@@ -275,19 +274,25 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
     // Negative = darker than base, Positive = lighter than base
     const relativePosition = (i - midIndex) / midIndex;
 
+    // === castStrength: per-step colour-cast multiplier ===
+    // t is normalised distance from midpoint: 0 at mid, 1 at endpoints.
+    // smoothstep gives an S-curve — flat near mid (preserving anchoring
+    // in neighbouring steps) and decelerating near endpoints (avoiding
+    // overshoot).  cast = 0 at the midpoint, strongest at endpoints.
+    const t_cast = midIndex > 0 ? Math.abs(i - midIndex) / midIndex : 0;
+    const castFactor = smoothstep(0, 1, t_cast);
+    const cast = config.castStrength * castFactor * Math.abs(temperature);
+
+    // Anchor direction for this step (warm light vs cool light, highlight vs shadow)
+    const isHighlight = relativePosition > 0;
+    const isWarmLight = temperature > 0;
+
     let H, C;
 
     // === NEAR-NEUTRAL TEMPERATURE STUDY BRANCH ===
-    // For near-neutral bases with temperature, create tint from scratch using anchors
-    // This implements "light color theory on greys": warm light creates warm highlights
-    // and cool shadows; cool light creates the opposite.
+    // For near-neutral bases with temperature, create tint from scratch using anchors.
+    // Warm light: highlights → warm (65°), shadows → cool (205°); cool light: opposite.
     if (isNeutralBase && temperature !== 0) {
-      // Determine anchor direction based on temperature and position
-      // Warm light: highlights -> warm (65°), shadows -> cool (205°)
-      // Cool light: highlights -> cool (205°), shadows -> warm (65°)
-      const isHighlight = relativePosition > 0;
-      const isWarmLight = temperature > 0;
-
       let anchorA, anchorB;
       if (isWarmLight) {
         anchorA = isHighlight ? WARM_ANCHOR_A : COOL_ANCHOR_A;
@@ -297,116 +302,81 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
         anchorB = isHighlight ? COOL_ANCHOR_B : WARM_ANCHOR_B;
       }
 
-      // Chroma curve for neutrals: peaks at extremes, minimal at midpoint
-      // This creates the temperature study effect where shadows and highlights are tinted
-      // but the midtones remain relatively neutral
-      const absPos = Math.abs(relativePosition);
-      const tempStrength = Math.abs(temperature);
-
-      // Mode-aware curve: higher exponent = more concentrated at extremes
-      // Conservative uses higher exponent so mid stays closer to pure grey
-      // Painterly uses lower exponent for more spread across the ladder
-      const curveExponent = config.neutralCurveExponent;
-      const tintStrength = config.neutralTintStrength;
-
-      // Smooth chroma ramp: starts at 0 at midpoint, rises toward extremes
-      // Power curve controls how quickly tint builds from center
-      const chromaWeight = Math.pow(absPos, curveExponent) * tempStrength * tintStrength;
-
-      // Calculate target chroma: scale between 0 and max tint
-      // Mode strength already applied via tintStrength
-      C = chromaWeight * NEUTRAL_TINT_C_MAX;
-
-      // Calculate H from anchor direction
       H = normalizeHue(Math.atan2(anchorB, anchorA) * (180 / Math.PI));
+
+      // Chroma driven entirely by cast (position × temperature × castStrength)
+      C = cast * NEUTRAL_TINT_C_MAX;
 
     } else {
       // === STANDARD BRANCH (non-neutral or neutral with temp=0) ===
 
-      // Calculate target chroma FIRST (needed for hue stability check)
+      // Chroma curve (not cast-related — same for both modes)
       const targetChroma = calculateChroma(baseOklch.C, relativePosition, config);
 
-      // Calculate biased hue toward anchor
-      // Warm light: highlights -> warm anchor (65°), shadows -> cool anchor (205°)
-      // Cool light: opposite
-      // Convert maxShift (degrees) to blend weight (0-1 scale)
-      const maxBlendWeight = maxShift / 90;
-      const rawBiasedHue = calculateBiasedHue(
-        baseOklch.H,
-        relativePosition,
-        temperature,
-        maxBlendWeight
-      );
+      // Hue bias toward temperature anchor, driven by cast
+      let anchorHue;
+      if (isWarmLight) {
+        anchorHue = isHighlight ? WARM_ANCHOR_H : COOL_ANCHOR_H;
+      } else {
+        anchorHue = isHighlight ? COOL_ANCHOR_H : WARM_ANCHOR_H;
+      }
 
-      // Apply hue stability damping when chroma is low
-      // Blend between base hue and biased hue based on stability factor
+      // cast is the blend weight toward the anchor (0 at midpoint)
+      const rawBiasedHue = blendHueDegrees(baseOklch.H, anchorHue, cast);
+
+      // Damp hue shift when chroma is low (prevents unstable casts near neutral)
       const stabilityFactor = getHueStabilityFactor(targetChroma);
       H = blendHueDegrees(baseOklch.H, rawBiasedHue, stabilityFactor);
 
-      // Calculate chroma with highlight falloff
-      // This collapses chroma toward white, preventing saturated highlights
+      // Chroma with highlight falloff (collapses toward white)
       const highlightFactor = Math.max(0, relativePosition);
       const highlightChromaFalloff = 1 - Math.pow(highlightFactor, 2.2);
       C = targetChroma * highlightChromaFalloff;
 
-      // Apply highlight convergence in OKLab space (more stable than hue-angle blending)
-      // Only for highlights (relativePosition > 0) and when temperature !== 0
+      // Highlight convergence in OKLab (more stable than hue-angle blending).
+      // castStrength scales the base convergence factor; position and temperature
+      // are handled by wPos and wTemp (convergence has its own spatial profile
+      // that kicks in at the top third, unlike the full-ramp smoothstep above).
       if (relativePosition > 0 && temperature !== 0) {
         const highlightPosition = relativePosition;
-
-        // Base convergence weight: kicks in near the top third, scales with temperature
         const wPos = smoothstep(0.6, 1.0, highlightPosition);
         const wTemp = Math.pow(Math.abs(temperature), 0.7);
-        let w = wPos * wTemp * config.convergenceStrength;
+        let w = wPos * wTemp * config.castStrength * CONVERGENCE_BASE;
 
-        // Scale weight down as chroma collapses - don't force hue when C is tiny
-        // This is the key fix: no hue manipulation when there's no chroma to shift
+        // Fade out when chroma is too low to shift meaningfully
         const chromaFade = smoothstep(CONVERGENCE_CHROMA_MIN, CONVERGENCE_CHROMA_REF, C);
         w *= chromaFade;
 
         if (w > 0.001) {
-          // Choose anchor direction based on temperature sign
           const anchorA = temperature > 0 ? WARM_ANCHOR_A : COOL_ANCHOR_A;
           const anchorB = temperature > 0 ? WARM_ANCHOR_B : COOL_ANCHOR_B;
-
-          // Converge in OKLab space - stable even at low chroma
           const converged = convergeInOklab({ L, C, H }, anchorA, anchorB, w);
           H = converged.H;
           C = converged.C;
         }
       }
 
-      // Yellow family guardrail: prevent cool-biased yellow highlights from drifting into green/mint
-      // Applies only when: temp < 0, base is yellow family, and we're in top 3 highlights
+      // Yellow family guardrail (existing — unified limit)
       const isYellowFamily = baseOklch.H >= YELLOW_FAMILY_HUE_MIN && baseOklch.H <= YELLOW_FAMILY_HUE_MAX;
       const isTop3Highlight = i >= steps - 3;
       if (isYellowFamily && temperature < 0 && isTop3Highlight) {
-        const hueLimit = mode === 'conservative'
-          ? YELLOW_HIGHLIGHT_HUE_LIMIT_CONSERVATIVE
-          : YELLOW_HIGHLIGHT_HUE_LIMIT_PAINTERLY;
-        if (H > hueLimit && H < 180) {  // Only clamp if drifting into green (not wrapping around)
-          H = hueLimit;
+        if (H > YELLOW_HIGHLIGHT_HUE_LIMIT && H < 180) {
+          H = YELLOW_HIGHLIGHT_HUE_LIMIT;
         }
       }
 
-      // Red family guardrail: prevent cool-biased red highlights from drifting into green/khaki
-      // Applies only when: temp < 0, base is red family (wrap-around range), and we're in top 3 highlights
+      // Red family guardrail (existing — unchanged)
       const isRedFamily = baseOklch.H >= RED_FAMILY_HUE_UPPER_MIN || baseOklch.H <= RED_FAMILY_HUE_LOWER_MAX;
       if (isRedFamily && temperature < 0 && isTop3Highlight) {
-        // Check if hue has drifted into the forbidden green-ish band (80°-170°)
         if (H >= RED_FORBIDDEN_HUE_MIN && H <= RED_FORBIDDEN_HUE_MAX) {
-          // Soft clamp: keep in warm/orange band [0°, 75°] by capping at the limit
           H = Math.min(H, RED_HIGHLIGHT_HUE_LIMIT);
         }
       }
     }
 
-    // Enforce chroma floor at extreme endpoints when temperature !== 0
-    // This guarantees tinted endpoints (no neutral grey) per behaviour contract
+    // Endpoint chroma floor — guarantees tinted endpoints when temperature ≠ 0
     const isEndpoint = (i === 0 || i === steps - 1);
     if (isEndpoint && temperature !== 0) {
-      // For neutral bases, use mode-specific floor (smaller for conservative)
-      // For non-neutrals, use standard floor
       const baseFloor = isNeutralBase
         ? config.neutralEndpointChromaFloor
         : 0.015;
@@ -415,7 +385,6 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
     }
 
     // Gamut clamp: reduce chroma to fit sRGB while preserving L and H
-    // Monotonicity is enforced earlier in lightnessValues, so no post-clamp L nudging needed
     const clamped = clampToSrgbGamut({ L, C, H });
 
     ramp.push(clamped);
@@ -512,7 +481,7 @@ export function validateHueDeltas(baseHex, temperature, steps, mode) {
   console.log(`Base: ${baseHex} (H: ${baseHue.toFixed(1)}, C: ${baseOklch.C.toFixed(3)})`);
   console.log(`Temperature: ${temperature}`);
   console.log(`Steps: ${steps}`);
-  console.log(`Max hue shift setting: ${MODE_CONFIG[mode].maxHueShift}°`);
+  console.log(`Cast strength: ${MODE_CONFIG[mode].castStrength}`);
   console.log('---');
 
   const deltas = [];
@@ -627,11 +596,11 @@ function wouldRequireClipping(oklch) {
 export function debugGamutMapping(baseHex, temperature, steps, mode) {
   const baseOklch = hexToOklch(baseHex);
   const config = MODE_CONFIG[mode] || MODE_CONFIG.painterly;
-  const maxShift = config.maxHueShift;
   const midIndex = Math.floor(steps / 2);
   const clippingIssues = [];
 
   console.group(`Gamut Mapping Debug: ${baseHex} @ temp=${temperature} (${mode})`);
+  console.log(`castStrength: ${config.castStrength}`);
   console.log('Step | Before L/C/H | In Gamut? | After L/C/H | dC | dH');
   console.log('-----|--------------|-----------|-------------|-----|----');
 
@@ -656,11 +625,17 @@ export function debugGamutMapping(baseHex, temperature, steps, mode) {
     const highlightChromaFalloff = 1 - Math.pow(highlightFactor, 2.2);
     const C = targetChroma * highlightChromaFalloff;
 
-    // Calculate hue with stability damping
-    const rawHueShift = calculateHueShift(baseOklch.H, relativePosition, temperature, maxShift);
-    const stabilityFactor = getHueStabilityFactor(C);
-    const hueShift = rawHueShift * stabilityFactor;
-    const H = normalizeHue(baseOklch.H + hueShift);
+    // Calculate hue via cast
+    const t_cast = midIndex > 0 ? Math.abs(i - midIndex) / midIndex : 0;
+    const castFactor = smoothstep(0, 1, t_cast);
+    const cast = config.castStrength * castFactor * Math.abs(temperature);
+    const isHighlight = relativePosition > 0;
+    const anchorHue = (temperature > 0)
+      ? (isHighlight ? WARM_ANCHOR_H : COOL_ANCHOR_H)
+      : (isHighlight ? COOL_ANCHOR_H : WARM_ANCHOR_H);
+    const rawBiasedHue = blendHueDegrees(baseOklch.H, anchorHue, cast);
+    const stabilityFactor = getHueStabilityFactor(targetChroma);
+    const H = blendHueDegrees(baseOklch.H, rawBiasedHue, stabilityFactor);
 
     const before = { L, C, H };
     const inGamut = isInGamut(before);

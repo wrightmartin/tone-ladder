@@ -40,9 +40,12 @@ export function generateRamp(
 
   // Generate ramp in OKLCH space
   const oklchRamp = generateOklchRamp(baseOklch, temperature, steps, mode);
-  
-  // Convert to hex and return
-  return rampToHex(oklchRamp);
+
+  // Convert to hex, then pin midpoint to the exact input hex
+  // (OKLCH round-trip can introduce ±1 LSB drift in some channels)
+  const hexRamp = rampToHex(oklchRamp);
+  hexRamp[Math.floor(steps / 2)] = normalizedHex;
+  return hexRamp;
 }
 
 /**
