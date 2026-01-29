@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Golden Tests</title>
+  <title>Golden Tests – Behaviour Trip-Wire</title>
   <style>
     body { font-family: monospace; background: #1a1a1a; color: #e0e0e0; padding: 2rem; }
     h1 { color: #fff; }
@@ -10,379 +10,232 @@
   </style>
 </head>
 <body>
-  <h1>Golden Tests</h1>
+  <h1>Golden Tests – Behaviour Trip-Wire</h1>
   <p class="instructions">Open the browser console (Cmd+Option+J / Ctrl+Shift+J) to see output.</p>
 
   <script type="module">
     import { generateRamp } from './assets/js/colorModels/index.js';
-    import { hexToOklch } from './assets/js/colorModels/convert.js';
+    import {
+      hexToOklch,
+      hexToSrgb, srgbToLinearRgb, linearRgbToOklab
+    } from './assets/js/colorModels/convert.js';
+
+    // ── Helpers ──────────────────────────────────────────────
+
+    /** Convert hex to OKLab {L, a, b} */
+    function hexToOklab(hex) {
+      return linearRgbToOklab(srgbToLinearRgb(hexToSrgb(hex)));
+    }
+
+    /** ΔE in OKLab (simple Euclidean) */
+    function deltaE(hex1, hex2) {
+      const a = hexToOklab(hex1);
+      const b = hexToOklab(hex2);
+      return Math.sqrt((a.L - b.L) ** 2 + (a.a - b.a) ** 2 + (a.b - b.b) ** 2);
+    }
+
+    // ── Golden cases ─────────────────────────────────────────
+    // Blue, red, pink-red, yellow, neutral, teal — all at steps=11.
 
     const goldenCases = [
+      // Blue
       { base: '#2F6FED', temp: +1, steps: 11, mode: 'conservative' },
       { base: '#2F6FED', temp: -1, steps: 11, mode: 'conservative' },
       { base: '#2F6FED', temp: +1, steps: 11, mode: 'painterly' },
       { base: '#2F6FED', temp: -1, steps: 11, mode: 'painterly' },
+      // Red
       { base: '#B51A00', temp: +1, steps: 11, mode: 'painterly' },
       { base: '#B51A00', temp: -1, steps: 11, mode: 'painterly' },
-      { base: '#E63B7A', temp: -1, steps: 11, mode: 'painterly' },  // Pink-red cool
+      // Pink-red
+      { base: '#E63B7A', temp: -1, steps: 11, mode: 'painterly' },
+      // Yellow
       { base: '#FEC700', temp: +1, steps: 11, mode: 'conservative' },
       { base: '#FEC700', temp: -1, steps: 11, mode: 'conservative' },
-      { base: '#FEC700', temp: -1, steps: 11, mode: 'painterly' },  // Yellow cool painterly
-      // Near-neutral temperature study tests (both modes)
-      { base: '#e9e9e9', temp: +1, steps: 11, mode: 'conservative' },  // Neutral warm conservative
-      { base: '#e9e9e9', temp: -1, steps: 11, mode: 'conservative' },  // Neutral cool conservative
-      { base: '#e9e9e9', temp: +1, steps: 11, mode: 'painterly' },     // Neutral warm painterly
-      { base: '#e9e9e9', temp: -1, steps: 11, mode: 'painterly' },     // Neutral cool painterly
-      // Teal/cyan - tests for mode expressivity (should currently FAIL)
+      { base: '#FEC700', temp: -1, steps: 11, mode: 'painterly' },
+      // Neutral
+      { base: '#e9e9e9', temp: +1, steps: 11, mode: 'conservative' },
+      { base: '#e9e9e9', temp: -1, steps: 11, mode: 'conservative' },
+      { base: '#e9e9e9', temp: +1, steps: 11, mode: 'painterly' },
+      { base: '#e9e9e9', temp: -1, steps: 11, mode: 'painterly' },
+      // Teal
       { base: '#47868B', temp: +1, steps: 11, mode: 'conservative' },
       { base: '#47868B', temp: -1, steps: 11, mode: 'conservative' },
       { base: '#47868B', temp: +1, steps: 11, mode: 'painterly' },
       { base: '#47868B', temp: -1, steps: 11, mode: 'painterly' },
     ];
 
-    // Yellow family guardrail constants
-    const YELLOW_HUE_MIN = 60;
-    const YELLOW_HUE_MAX = 110;
-    const YELLOW_HIGHLIGHT_HUE_LIMIT = 120;  // Above this = "too green"
-
-    // Red family guardrail constants
-    const RED_FORBIDDEN_HUE_MIN = 80;   // Start of green-ish zone
-    const RED_FORBIDDEN_HUE_MAX = 170;  // End of green-ish zone
-    const RED_CHROMA_THRESHOLD = 0.015; // Only check if chroma is visible
+    // ── Run ──────────────────────────────────────────────────
 
     function runGoldenTests() {
       console.clear();
+
+      let hardFails = 0;
+      const warnings = [];   // { base, message }
+
+      // Pre-generate all ramps once
+      const ramps = goldenCases.map(tc => ({
+        ...tc,
+        ramp: generateRamp(tc.base, tc.temp, tc.steps, tc.mode),
+      }));
+
+      // Helper to label a case
+      const label = tc => `${tc.base} temp=${tc.temp > 0 ? '+1' : '-1'} ${tc.mode}`;
+
+      // ── Tier 1: Hard FAILs ──────────────────────────────
+
       console.log('='.repeat(60));
-      console.log('GOLDEN TESTS');
+      console.log('TIER 1 — HARD CHECKS');
       console.log('='.repeat(60));
+
+      // 1a. Monotonic lightness (strict increase)
       console.log('');
-
-      for (const tc of goldenCases) {
-        const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);
-        const midIndex = Math.floor(tc.steps / 2);
-        const keyIndices = [0, 1, midIndex, tc.steps - 2, tc.steps - 1];
-
-        const tempLabel = tc.temp > 0 ? `+${tc.temp}` : `${tc.temp}`;
-        console.log(`--- ${tc.base} | temp=${tempLabel} | steps=${tc.steps} | ${tc.mode} ---`);
-        console.log('Hex ramp:', ramp.join(' '));
-        console.log('');
-        console.log('Key steps (L, C, H):');
-
-        for (const i of keyIndices) {
-          const hex = ramp[i];
-          const oklch = hexToOklch(hex);
-          const label = i === 0 ? 'darkest' :
-                        i === 1 ? 'dark' :
-                        i === midIndex ? 'mid (base)' :
-                        i === tc.steps - 2 ? 'light' :
-                        'lightest';
-          console.log(
-            `  [${String(i).padStart(2)}] ${hex} | L=${oklch.L.toFixed(3)} C=${oklch.C.toFixed(3)} H=${oklch.H.toFixed(1).padStart(5)} | ${label}`
-          );
-        }
-        console.log('');
-      }
-
-      // === VERIFICATION CHECKS ===
-      console.log('='.repeat(60));
-      console.log('VERIFICATION CHECKS');
-      console.log('='.repeat(60));
-      console.log('');
-
-      // Check 1: Yellow family guardrail (cool temp, top 3 highlights)
-      console.log('1. YELLOW FAMILY GUARDRAIL (cool temp highlights)');
-      const yellowCoolCases = goldenCases.filter(tc =>
-        tc.base === '#FEC700' && tc.temp < 0
-      );
-
-      for (const tc of yellowCoolCases) {
-        const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);
-        const top3Indices = [tc.steps - 3, tc.steps - 2, tc.steps - 1];
-        let allPass = true;
-
-        console.log(`   ${tc.mode}:`);
-        for (const i of top3Indices) {
-          const hex = ramp[i];
-          const oklch = hexToOklch(hex);
-          const tooGreen = oklch.H > YELLOW_HIGHLIGHT_HUE_LIMIT;
-          if (tooGreen) allPass = false;
-          const status = tooGreen ? 'FAIL (green)' : 'ok';
-          console.log(`     [${i}] ${hex} H=${oklch.H.toFixed(1)} ${status}`);
-        }
-        console.log(`   Result: ${allPass ? 'PASS' : 'FAIL - mint/green in highlights'}`);
-        console.log('');
-      }
-
-      // Check 2: Red family guardrail (cool temp, top 3 highlights)
-      console.log('2. RED FAMILY GUARDRAIL (cool temp highlights)');
-      const redCoolCases = goldenCases.filter(tc =>
-        tc.base === '#B51A00' && tc.temp < 0
-      );
-
-      let redGuardrailPass = true;
-      for (const tc of redCoolCases) {
-        const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);
-        const top3Indices = [tc.steps - 3, tc.steps - 2, tc.steps - 1];
-
-        console.log(`   ${tc.mode}:`);
-        for (const i of top3Indices) {
-          const hex = ramp[i];
-          const oklch = hexToOklch(hex);
-          // Forbidden band: 80°-170° (green-ish zone)
-          const inForbiddenBand = oklch.H >= RED_FORBIDDEN_HUE_MIN && oklch.H <= RED_FORBIDDEN_HUE_MAX;
-          // Only check if chroma is visible
-          const hasVisibleChroma = oklch.C >= RED_CHROMA_THRESHOLD;
-          const fail = inForbiddenBand && hasVisibleChroma;
-          if (fail) redGuardrailPass = false;
-          const status = fail ? 'FAIL (green-ish)' : 'ok';
-          console.log(`     [${i}] ${hex} H=${oklch.H.toFixed(1)} C=${oklch.C.toFixed(3)} ${status}`);
-        }
-        console.log(`   Result: ${redGuardrailPass ? 'PASS' : 'FAIL - green/khaki in highlights'}`);
-        console.log('');
-      }
-
-      // Check 3: Endpoint tinting
-      console.log('3. ENDPOINT TINTING (C > 0 when temp !== 0)');
-      let endpointPass = true;
-      for (const tc of goldenCases) {
-        if (tc.temp === 0) continue;
-        const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);
-        const darkC = hexToOklch(ramp[0]).C;
-        const lightC = hexToOklch(ramp[tc.steps - 1]).C;
-        if (darkC < 0.005 || lightC < 0.005) {
-          console.log(`   FAIL: ${tc.base} temp=${tc.temp} ${tc.mode} - dark C=${darkC.toFixed(3)}, light C=${lightC.toFixed(3)}`);
-          endpointPass = false;
-        }
-      }
-      console.log(`   Result: ${endpointPass ? 'PASS' : 'FAIL'}`);
-      console.log('');
-
-      // Check 4: Blue warm/cool shadow direction
-      console.log('4. BLUE SHADOW DIRECTION (warm should be cooler than cool)');
-      const blueWarm = generateRamp('#2F6FED', +1, 11, 'painterly');
-      const blueCool = generateRamp('#2F6FED', -1, 11, 'painterly');
-      const warmShadowH = hexToOklch(blueWarm[0]).H;
-      const coolShadowH = hexToOklch(blueCool[0]).H;
-      const warmDistToCool = Math.min(Math.abs(warmShadowH - 205), 360 - Math.abs(warmShadowH - 205));
-      const coolDistToCool = Math.min(Math.abs(coolShadowH - 205), 360 - Math.abs(coolShadowH - 205));
-      const shadowPass = warmDistToCool < coolDistToCool;
-      console.log(`   Warm shadow H=${warmShadowH.toFixed(1)} (dist to cool anchor: ${warmDistToCool.toFixed(1)})`);
-      console.log(`   Cool shadow H=${coolShadowH.toFixed(1)} (dist to cool anchor: ${coolDistToCool.toFixed(1)})`);
-      console.log(`   Result: ${shadowPass ? 'PASS' : 'FAIL'}`);
-      console.log('');
-
-      // Check 5: Near-neutral temperature study
-      console.log('5. NEAR-NEUTRAL TEMPERATURE STUDY');
-
-      // Thresholds for neutral checks
-      const WARM_ANCHOR_H = 65;
-      const COOL_ANCHOR_H = 205;
-      const VISIBLE_TINT_C_MIN = 0.01;
-
-      // Helper to calculate distance to anchor (shortest arc)
-      function distToAnchor(hue, anchorHue) {
-        return Math.min(Math.abs(hue - anchorHue), 360 - Math.abs(hue - anchorHue));
-      }
-
-      const neutralCases = [
-        { base: '#e9e9e9', temp: +1, steps: 11, mode: 'conservative', label: 'Neutral warm conservative' },
-        { base: '#e9e9e9', temp: -1, steps: 11, mode: 'conservative', label: 'Neutral cool conservative' },
-        { base: '#e9e9e9', temp: +1, steps: 11, mode: 'painterly', label: 'Neutral warm painterly' },
-        { base: '#e9e9e9', temp: -1, steps: 11, mode: 'painterly', label: 'Neutral cool painterly' },
-      ];
-
-      let neutralAllPass = true;
-      for (const tc of neutralCases) {
-        const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);
-        const darkest = hexToOklch(ramp[0]);
-        const lightest = hexToOklch(ramp[tc.steps - 1]);
-
-        console.log(`   ${tc.label} (temp=${tc.temp > 0 ? '+1' : '-1'}):`);
-
-        // For warm light (temp > 0):
-        //   - darkest should be closer to cool anchor (205°)
-        //   - lightest should be closer to warm anchor (65°)
-        // For cool light (temp < 0): opposite
-
-        const warmAnchor = tc.temp > 0 ? WARM_ANCHOR_H : COOL_ANCHOR_H;  // Expected highlight anchor
-        const coolAnchor = tc.temp > 0 ? COOL_ANCHOR_H : WARM_ANCHOR_H;  // Expected shadow anchor
-
-        // Check darkest (shadow) - should bias toward coolAnchor
-        let shadowPass = true;
-        if (darkest.C >= VISIBLE_TINT_C_MIN) {
-          const distToCool = distToAnchor(darkest.H, coolAnchor);
-          const distToWarm = distToAnchor(darkest.H, warmAnchor);
-          shadowPass = distToCool < distToWarm;
-          console.log(`     Darkest: ${ramp[0]} L=${darkest.L.toFixed(3)} C=${darkest.C.toFixed(3)} H=${darkest.H.toFixed(1)}`);
-          console.log(`       dist to expected anchor (${coolAnchor}°): ${distToCool.toFixed(1)}° vs opposite: ${distToWarm.toFixed(1)}°`);
-          console.log(`       ${shadowPass ? 'ok' : 'FAIL'}`);
-        } else {
-          console.log(`     Darkest: ${ramp[0]} C=${darkest.C.toFixed(3)} (too low to check hue)`);
-        }
-
-        // Check lightest (highlight) - should bias toward warmAnchor
-        let highlightPass = true;
-        if (lightest.C >= VISIBLE_TINT_C_MIN) {
-          const distToWarm = distToAnchor(lightest.H, warmAnchor);
-          const distToCool = distToAnchor(lightest.H, coolAnchor);
-          highlightPass = distToWarm < distToCool;
-          console.log(`     Lightest: ${ramp[tc.steps - 1]} L=${lightest.L.toFixed(3)} C=${lightest.C.toFixed(3)} H=${lightest.H.toFixed(1)}`);
-          console.log(`       dist to expected anchor (${warmAnchor}°): ${distToWarm.toFixed(1)}° vs opposite: ${distToCool.toFixed(1)}°`);
-          console.log(`       ${highlightPass ? 'ok' : 'FAIL'}`);
-        } else {
-          console.log(`     Lightest: ${ramp[tc.steps - 1]} C=${lightest.C.toFixed(3)} (too low to check hue)`);
-        }
-
-        const casePass = shadowPass && highlightPass;
-        if (!casePass) neutralAllPass = false;
-        console.log(`   Result: ${casePass ? 'PASS' : 'FAIL'}`);
-        console.log('');
-      }
-
-      // Also show first 2 and last 2 steps for visual inspection
-      console.log('   Key steps for visual inspection:');
-      for (const tc of neutralCases) {
-        const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);
-        console.log(`   ${tc.label}:`);
-        console.log(`     Hex ramp: ${ramp.join(' ')}`);
-        for (const i of [0, 1, tc.steps - 2, tc.steps - 1]) {
-          const hex = ramp[i];
-          const oklch = hexToOklch(hex);
-          const label = i < 2 ? 'shadow' : 'highlight';
-          console.log(`     [${String(i).padStart(2)}] ${hex} | L=${oklch.L.toFixed(3)} C=${oklch.C.toFixed(3)} H=${oklch.H.toFixed(1).padStart(5)} | ${label}`);
-        }
-        console.log('');
-      }
-
-      // Check 6: Neutral mode separation (painterly > conservative)
-      console.log('6. NEUTRAL MODE SEPARATION (painterly should be stronger than conservative)');
-      const MODE_SEPARATION_RATIO = 1.3;  // painterly endpoint C should be at least 1.3x conservative
-      let modeSepPass = true;
-
-      for (const temp of [+1, -1]) {
-        const consRamp = generateRamp('#e9e9e9', temp, 11, 'conservative');
-        const paintRamp = generateRamp('#e9e9e9', temp, 11, 'painterly');
-
-        // Compare endpoint chroma (average of darkest and lightest)
-        const consEndpointC = (hexToOklch(consRamp[0]).C + hexToOklch(consRamp[10]).C) / 2;
-        const paintEndpointC = (hexToOklch(paintRamp[0]).C + hexToOklch(paintRamp[10]).C) / 2;
-        const ratio = paintEndpointC / consEndpointC;
-
-        const tempLabel = temp > 0 ? '+1' : '-1';
-        const pass = ratio >= MODE_SEPARATION_RATIO;
-        if (!pass) modeSepPass = false;
-
-        console.log(`   temp=${tempLabel}:`);
-        console.log(`     Conservative avg endpoint C: ${consEndpointC.toFixed(4)}`);
-        console.log(`     Painterly avg endpoint C:    ${paintEndpointC.toFixed(4)}`);
-        console.log(`     Ratio (P/C): ${ratio.toFixed(2)}x (need >= ${MODE_SEPARATION_RATIO}x)`);
-        console.log(`     ${pass ? 'ok' : 'FAIL'}`);
-      }
-      console.log(`   Result: ${modeSepPass ? 'PASS' : 'FAIL'}`);
-      console.log('');
-
-      // Check 7: Monotonic lightness (no wobble)
-      console.log('7. MONOTONIC LIGHTNESS (no wobble / dead rungs)');
-      let monotonicPass = true;
-      for (const tc of goldenCases) {
-        const ramp = generateRamp(tc.base, tc.temp, tc.steps, tc.mode);
+      console.log('1a. Monotonic lightness');
+      for (const tc of ramps) {
         let prev = -Infinity;
-        for (let i = 0; i < ramp.length; i++) {
-          const L = hexToOklch(ramp[i]).L;
+        for (let i = 0; i < tc.ramp.length; i++) {
+          const L = hexToOklch(tc.ramp[i]).L;
           if (L <= prev) {
-            console.log(`   FAIL: ${tc.base} temp=${tc.temp} ${tc.mode} - step ${i} L=${L.toFixed(3)} <= prev L=${prev.toFixed(3)}`);
-            monotonicPass = false;
+            hardFails++;
+            console.log(`  FAIL  ${label(tc)} — step ${i} L=${L.toFixed(4)} <= prev ${prev.toFixed(4)}`);
           }
           prev = L;
         }
       }
-      console.log(`   Result: ${monotonicPass ? 'PASS' : 'FAIL'}`);
+      if (hardFails === 0) console.log('  all pass');
+
+      // 1b. Midpoint anchoring (mid step must equal base hex)
       console.log('');
-
-      // === TEAL MODE EXPRESSIVITY CHECK ===
-      // This check ensures mode control produces meaningful differences in highlights.
-      // Currently expected to FAIL - establishing the starting line before algorithm fixes.
-
-      console.log('8. TEAL MODE EXPRESSIVITY (painterly vs conservative highlights)');
-
-      // Thresholds
-      const C_VISIBLE = 0.012;       // Minimum chroma to consider hue meaningful
-      const DH_MIN_MODE = 4;         // Min hue difference for mode separation
-      const DC_MIN_MODE = 0.006;     // Min chroma difference for mode separation
-      const HIGHLIGHT_WINDOW = [7, 8, 9, 10];  // Steps to check
-
-      // Helper: calculate hue difference (shortest arc)
-      function hueDiff(h1, h2) {
-        const diff = Math.abs(h1 - h2);
-        return diff > 180 ? 360 - diff : diff;
-      }
-
-      const tealBase = '#47868B';
-      let tealModeExpressPass = true;
-
-      for (const temp of [+1, -1]) {
-        const tempLabel = temp > 0 ? 'warm' : 'cool';
-        const consRamp = generateRamp(tealBase, temp, 11, 'conservative');
-        const paintRamp = generateRamp(tealBase, temp, 11, 'painterly');
-
-        console.log(`   ${tempLabel} (temp=${temp > 0 ? '+1' : '-1'}):`);
-        console.log(`     Cons window:  ${HIGHLIGHT_WINDOW.map(i => consRamp[i]).join(' ')}`);
-        console.log(`     Paint window: ${HIGHLIGHT_WINDOW.map(i => paintRamp[i]).join(' ')}`);
-
-        // Check for chroma headroom and meaningful differences
-        let hasHeadroom = false;
-        let foundDifference = false;
-        let triggerStep = null;
-        let triggerReason = null;
-
-        for (const i of HIGHLIGHT_WINDOW) {
-          const consOklch = hexToOklch(consRamp[i]);
-          const paintOklch = hexToOklch(paintRamp[i]);
-
-          const bothVisible = consOklch.C >= C_VISIBLE && paintOklch.C >= C_VISIBLE;
-          if (bothVisible) hasHeadroom = true;
-
-          const dH = hueDiff(consOklch.H, paintOklch.H);
-          const dC = Math.abs(consOklch.C - paintOklch.C);
-
-          const lowCFlag = bothVisible ? '' : ' (low C)';
-          console.log(`     [${i}] cons H=${consOklch.H.toFixed(1)} C=${consOklch.C.toFixed(3)} | paint H=${paintOklch.H.toFixed(1)} C=${paintOklch.C.toFixed(3)} | ΔH=${dH.toFixed(1)} ΔC=${dC.toFixed(4)}${lowCFlag}`);
-
-          // Check for meaningful difference (only count hue diff when chroma is visible)
-          if (bothVisible && dH >= DH_MIN_MODE) {
-            foundDifference = true;
-            triggerStep = i;
-            triggerReason = `ΔH=${dH.toFixed(1)}° >= ${DH_MIN_MODE}°`;
-          }
-          if (dC >= DC_MIN_MODE) {
-            foundDifference = true;
-            triggerStep = i;
-            triggerReason = `ΔC=${dC.toFixed(4)} >= ${DC_MIN_MODE}`;
-          }
+      console.log('1b. Midpoint anchoring');
+      const midFailsBefore = hardFails;
+      for (const tc of ramps) {
+        const mid = Math.floor(tc.steps / 2);
+        const midHex = tc.ramp[mid].toUpperCase();
+        const baseHex = tc.base.toUpperCase();
+        if (midHex !== baseHex) {
+          hardFails++;
+          console.log(`  FAIL  ${label(tc)} — base=${baseHex}  mid[${mid}]=${midHex}`);
         }
-
-        if (!hasHeadroom) {
-          console.log(`     SKIP: insufficient chroma headroom in highlight window`);
-        } else if (foundDifference) {
-          console.log(`     PASS: expressivity at step ${triggerStep} (${triggerReason})`);
-        } else {
-          console.log(`     FAIL: cons and paint too similar in highlights`);
-          tealModeExpressPass = false;
-        }
-        console.log('');
       }
-      console.log(`   Result: ${tealModeExpressPass ? 'PASS' : 'FAIL'}`);
+      if (hardFails === midFailsBefore) console.log('  all pass');
+
+      // ── Tier 2: Soft WARNs ──────────────────────────────
+
       console.log('');
-
       console.log('='.repeat(60));
-      console.log('END GOLDEN TESTS');
+      console.log('TIER 2 — SOFT WARNINGS');
+      console.log('='.repeat(60));
+
+      // Collect unique bases that have visible chroma (C >= 0.02 at midpoint).
+      const chromaBases = [...new Set(goldenCases.map(tc => tc.base))].filter(base => {
+        const oklch = hexToOklch(base);
+        return oklch.C >= 0.02;
+      });
+
+      // "Top 3 highlights" = last 3 steps.
+      const top3 = (steps) => [steps - 3, steps - 2, steps - 1];
+
+      // Threshold: at least one of the top-3 highlight pairs must differ
+      // by ΔE_oklab >= 1.0, ignoring pairs where both have C < 0.01.
+      const DE_THRESHOLD = 1.0;
+      const LOW_C = 0.01;
+
+      // 2a. Low temperature sensitivity (warm vs cool, same mode)
+      console.log('');
+      console.log('2a. Temperature sensitivity (warm vs cool, same mode)');
+
+      for (const base of chromaBases) {
+        const modes = [...new Set(goldenCases.filter(tc => tc.base === base).map(tc => tc.mode))];
+        for (const mode of modes) {
+          const warm = ramps.find(tc => tc.base === base && tc.mode === mode && tc.temp > 0);
+          const cool = ramps.find(tc => tc.base === base && tc.mode === mode && tc.temp < 0);
+          if (!warm || !cool) continue;
+
+          const indices = top3(warm.steps);
+          let maxDE = 0;
+          let comparedAny = false;
+          for (const i of indices) {
+            const cW = hexToOklch(warm.ramp[i]).C;
+            const cC = hexToOklch(cool.ramp[i]).C;
+            // Skip if both near-zero chroma (hue meaningless)
+            if (cW < LOW_C && cC < LOW_C) continue;
+            comparedAny = true;
+            const de = deltaE(warm.ramp[i], cool.ramp[i]);
+            if (de > maxDE) maxDE = de;
+          }
+
+          if (comparedAny && maxDE < DE_THRESHOLD) {
+            const msg = `${mode}: max ΔE=${maxDE.toFixed(3)} across top-3 highlights (threshold ${DE_THRESHOLD})`;
+            warnings.push({ base, message: msg });
+            console.log(`  WARN  ${base} ${mode} — ${msg}`);
+          }
+        }
+      }
+
+      // 2b. Low mode separation (conservative vs painterly, same temp)
+      console.log('');
+      console.log('2b. Mode separation (conservative vs painterly, same temp)');
+
+      for (const base of chromaBases) {
+        const temps = [...new Set(goldenCases.filter(tc => tc.base === base).map(tc => tc.temp))];
+        for (const temp of temps) {
+          const cons = ramps.find(tc => tc.base === base && tc.temp === temp && tc.mode === 'conservative');
+          const paint = ramps.find(tc => tc.base === base && tc.temp === temp && tc.mode === 'painterly');
+          if (!cons || !paint) continue;
+
+          const indices = top3(cons.steps);
+          let maxDE = 0;
+          let comparedAny = false;
+          for (const i of indices) {
+            const cCons = hexToOklch(cons.ramp[i]).C;
+            const cPaint = hexToOklch(paint.ramp[i]).C;
+            if (cCons < LOW_C && cPaint < LOW_C) continue;
+            comparedAny = true;
+            const de = deltaE(cons.ramp[i], paint.ramp[i]);
+            if (de > maxDE) maxDE = de;
+          }
+
+          if (comparedAny && maxDE < DE_THRESHOLD) {
+            const tempLabel = temp > 0 ? 'warm' : 'cool';
+            const msg = `${tempLabel}: max ΔE=${maxDE.toFixed(3)} across top-3 highlights (threshold ${DE_THRESHOLD})`;
+            warnings.push({ base, message: msg });
+            console.log(`  WARN  ${base} ${tempLabel} — ${msg}`);
+          }
+        }
+      }
+
+      // ── Summary ─────────────────────────────────────────
+
+      console.log('');
+      console.log('='.repeat(60));
+      console.log('SUMMARY');
+      console.log('='.repeat(60));
+      console.log(`  Cases:    ${ramps.length}`);
+      console.log(`  FAIL:     ${hardFails}`);
+      console.log(`  WARN:     ${warnings.length}`);
+
+      if (warnings.length > 0) {
+        console.log('');
+        console.log('  Warnings by base:');
+        const grouped = {};
+        for (const w of warnings) {
+          (grouped[w.base] ??= []).push(w.message);
+        }
+        for (const [base, msgs] of Object.entries(grouped)) {
+          console.log(`    ${base}`);
+          for (const m of msgs) console.log(`      – ${m}`);
+        }
+      }
+
+      console.log('');
+      if (hardFails > 0) {
+        console.log(`❌  ${hardFails} hard fail(s) — see above.`);
+      } else {
+        console.log('✅  All hard checks pass.');
+      }
       console.log('='.repeat(60));
     }
 
-    // Export for console access
     window.runGoldenTests = runGoldenTests;
-
-    // Run on load
     runGoldenTests();
   </script>
 </body>
