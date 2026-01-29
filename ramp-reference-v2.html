@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tone Ladder — Reference Ladders</title>
+
+<style>
+  :root{
+    --bg:#0b0c10;
+    --text:#e8eaf0;
+    --muted:#a6adbb;
+    --border:rgba(255,255,255,0.12);
+    --cardGrad1:rgba(255,255,255,0.04);
+    --cardGrad2:rgba(255,255,255,0.02);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    padding:24px;
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    background:
+      radial-gradient(1000px 500px at 15% -10%, rgba(120,140,255,0.18), transparent 60%),
+      radial-gradient(900px 500px at 85% 10%, rgba(255,180,120,0.14), transparent 55%),
+      var(--bg);
+    color:var(--text);
+  }
+  .wrap{max-width:1240px;margin:0 auto}
+  header{display:grid;gap:6px;margin-bottom:18px}
+  h1{margin:0;font-size:22px}
+  p{margin:0;color:var(--muted);font-size:14px;line-height:1.45}
+
+  .toolbar{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    align-items:center;
+    margin: 14px 0 24px;
+  }
+  .chip{
+    border:1px solid var(--border);
+    background: rgba(0,0,0,0.18);
+    color: var(--text);
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .chip strong{font-weight:650}
+  .chip button{
+    margin-left:8px;
+    border:1px solid var(--border);
+    background: rgba(255,255,255,0.04);
+    color: var(--text);
+    border-radius: 999px;
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor:pointer;
+  }
+  .chip button:hover{background: rgba(255,255,255,0.08);}
+
+  section{margin-bottom:34px}
+  .section-title{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    margin:0 0 12px;
+    font-size:16px;
+    font-weight:650;
+  }
+  .section-title code{
+    font-weight:600;
+    font-size:12px;
+    color: rgba(255,255,255,0.9);
+    background: rgba(0,0,0,0.25);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 999px;
+    padding: 2px 8px;
+  }
+
+  .grid{display:grid;gap:16px}
+  @media (min-width: 900px){
+    .grid{grid-template-columns:1fr 1fr}
+  }
+
+  .card{
+    background: linear-gradient(180deg, var(--cardGrad1), var(--cardGrad2));
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 14px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+    overflow:hidden;
+  }
+  .card h3{margin:0 0 4px;font-size:14px;font-weight:650}
+  .meta{font-size:12px;color:var(--muted);margin-bottom:10px}
+
+  .ramp{
+    display:grid;
+    grid-template-columns: repeat(11, minmax(0,1fr));
+    gap:8px;
+  }
+  .swatch{
+    position:relative;
+    min-height:90px;
+    border-radius:12px;
+    border:1px solid rgba(255,255,255,0.15);
+    overflow:hidden;
+  }
+  .swatch::after{
+    content:"";
+    position:absolute;
+    inset:0;
+    background: linear-gradient(180deg, rgba(255,255,255,0.12), transparent 60%);
+    pointer-events:none;
+  }
+  .label{
+    position:absolute;
+    left:6px; right:6px; bottom:6px;
+    font-size:11px;
+    line-height:1.2;
+    color:rgba(255,255,255,0.95);
+    text-shadow:0 1px 2px rgba(0,0,0,0.6);
+  }
+  .idx{opacity:0.75;font-variant-numeric:tabular-nums}
+  .label code{
+    display:inline-block;
+    margin-top:2px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size:10.5px;
+    background: rgba(0,0,0,0.25);
+    padding:2px 6px;
+    border-radius:6px;
+    border:1px solid rgba(255,255,255,0.15);
+  }
+
+  .vars{
+    margin-top:10px;
+    padding:10px;
+    border-radius:12px;
+    border:1px solid rgba(255,255,255,0.10);
+    background: rgba(0,0,0,0.22);
+    color: rgba(255,255,255,0.88);
+    font-size: 12px;
+    line-height: 1.45;
+    overflow:auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+</style>
+</head>
+
+<body>
+<div class="wrap">
+  <header>
+    <h1>Tone Ladder — Reference Ladders</h1>
+    <p>Manually sampled ladders as perceptual ground truth. Dark → light, 11 steps. Generated from a data object.</p>
+  </header>
+
+  <div class="toolbar">
+    <span class="chip"><strong>Tip:</strong> click “Copy CSS” on any ladder to grab tokens</span>
+    <span class="chip"><strong>Note:</strong> this file is intentionally static (no algorithm)</span>
+    <span class="chip"><strong>Sort:</strong> grouped by base colour</span>
+  </div>
+
+  <div id="app"></div>
+</div>
+
+<script>
+  // Data model:
+  // groups: [{ name, base, ladders: [{ mode, tempLabel, tempKey, steps[] }] }]
+  const GROUPS = [
+    {
+      name: "Blue",
+      base: "#2F6FED",
+      ladders: [
+        { mode: "Painterly",     tempLabel: "Warm", tempKey: "warm", steps: ["#03090e","#0a2848","#17478b","#225dbe","#2c6ce3","#2f6fed","#3975e9","#5d87dd","#8fa5d1","#cecdca","#f9f7f3"] },
+        { mode: "Painterly",     tempLabel: "Cool", tempKey: "cool", steps: ["#080807","#1b2332","#2a4272","#2f5aaf","#2f6bdf","#2f6fed","#3575ed","#4c8cf0","#70adf6","#abd5fb","#f1f8fe"] },
+        { mode: "Conservative",  tempLabel: "Warm", tempKey: "warm", steps: ["#04090d","#0c274b","#19468c","#245dbf","#2c6be3","#2f6fed","#3874eb","#5a87e3","#89a5dc","#c9ced8","#f8f7f6"] },
+        { mode: "Conservative",  tempLabel: "Cold", tempKey: "cool", steps: ["#1d1d1f","#18243b","#26437c","#2c5ab5","#2f6be1","#2f6fed","#3575ed","#4f8bf0","#75abf6","#b0d3fa","#f2f8fe"] },
+      ]
+    },
+    {
+      name: "Red",
+      base: "#B51A00",
+      ladders: [
+        { mode: "Painterly",     tempLabel: "Warm", tempKey: "warm", steps: ["#060708","#26100f","#581910","#861a0a","#aa1b03","#b51a00","#b62309","#bd452a","#cb7758","#e7b792","#fdf3e7"] },
+        { mode: "Painterly",     tempLabel: "Cold", tempKey: "cool", steps: ["#0a0603","#320e00","#641500","#8e1800","#ac1a00","#b51a00","#b4240c","#b0493b","#a98181","#c0c1c8","#f2f5f7"] },
+        { mode: "Conservative",  tempLabel: "Warm", tempKey: "warm", steps: ["#080506","#2d0e0a","#5e160b","#8a1907","#ab1a02","#b51a00","#b72309","#bf442b","#cd755b","#e7b599","#fcf3ea"] },
+        { mode: "Conservative",  tempLabel: "Cold", tempKey: "cool", steps: ["#0a0502","#350b00","#671400","#901700","#ad1a00","#b51a00","#b5230b","#b54737","#b57b77","#cbbbbd","#f4f4f5"] },
+      ]
+    },
+    {
+      name: "Yellow",
+      base: "#FEC700",
+      ladders: [
+        { mode: "Painterly",     tempLabel: "Warm", tempKey: "warm", steps: ["#0d1312","#37492a","#7b822d","#c0a619","#f1c006","#fec700","#fec90b","#fdd034","#fedc6a","#ffebb0","#fffcf3"] },
+        { mode: "Painterly",     tempLabel: "Cold", tempKey: "cool", steps: ["#0f0c02","#574100","#9c7806","#cea107","#f4bf02","#fec700","#fbc90f","#f4d341","#eddf81","#efeec7","#fcfcf8"] },
+        { mode: "Conservative",  tempLabel: "Warm", tempKey: "warm", steps: ["#090d0a","#40471d","#847e1f","#c4a411","#f2bf04","#fec700","#fec90b","#fdd032","#fedb67","#ffebae","#fffcf4"] },
+        { mode: "Conservative",  tempLabel: "Cold", tempKey: "cool", steps: ["#0f0c02","#564000","#9b7804","#cea105","#f4bf02","#fec700","#fcc90d","#f7d23b","#f3df78","#f4eebe","#fdfcf5"] },
+      ]
+    },
+    {
+      name: "Teal",
+      base: "#47868B",
+      ladders: [
+        { mode: "Painterly",     tempLabel: "Warm", tempKey: "warm", steps: ["#040a0c","#0f2f37","#22555e","#346f77","#428188","#47868b","#4f898c","#6f9995","#9bb2a3","#d5d2b6","#f9f8f0"] },
+        { mode: "Painterly",     tempLabel: "Cold", tempKey: "cool", steps: ["#090905","#232a1e","#374f44","#426b67","#468083","#47868b","#4c8b91","#5e9ea8","#7fbac6","#b4dbe6","#f1f9fb"] },
+        { mode: "Conservative",  tempLabel: "Warm", tempKey: "warm", steps: ["#04090b","#122e33","#25535b","#366e75","#438187","#47868b","#4e8a8e","#6c9a98","#98b3a9","#cfd4c0","#f8f8f2"] },
+        { mode: "Conservative",  tempLabel: "Cold", tempKey: "cool", steps: ["#080907","#1f2a23","#345049","#3f6c6a","#458184","#47868b","#4c8a90","#619da5","#83b7c1","#b8d9e1","#f2f9fa"] },
+      ]
+    },
+    {
+      name: "Grey",
+      base: "#E9E9E9",
+      ladders: [
+        { mode: "Painterly",     tempLabel: "Warm", tempKey: "warm", steps: ["#070f12","#325764","#7497a5","#b7c1c4","#dfe0e1","#e9e9e9","#eaeae9","#efede9","#f4f1eb","#faf8f3","#fefefe"] },
+        { mode: "Painterly",     tempLabel: "Cold", tempKey: "cool", steps: ["#100d07","#584b31","#978d7c","#c2beb5","#e1e0de","#e9e9e9","#e9eaea","#ebeeef","#eef2f4","#f6f9fa","#fefefe"] },
+        { mode: "Conservative",  tempLabel: "Warm", tempKey: "warm", steps: ["#090f11","#3a535c","#7c959e","#b9c0c2","#dfe0e0","#e9e9e9","#eaeae9","#eeedea","#f3f1ed","#faf8f4","#fefefe"] },
+        { mode: "Conservative",  tempLabel: "Cold", tempKey: "cool", steps: ["#0f0d09","#564d3a","#948d81","#c1beb8","#e0e0df","#e9e9e9","#eaeaea","#ecedee","#eff2f3","#f6f9fa","#fefefe"] },
+      ]
+    }
+  ];
+
+  function escapeHtml(s){
+    return String(s)
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
+  }
+
+  function ladderTokenName(baseHex, groupName, mode, tempLabel){
+    // Stable-ish token prefix: group name + base hex (no #) + mode + temp
+    const base = baseHex.replace("#","").toLowerCase();
+    const g = groupName.toLowerCase().replace(/\s+/g,"-");
+    const m = mode.toLowerCase();
+    const t = tempLabel.toLowerCase();
+    return `${g}-${base}-${m}-${t}`;
+  }
+
+  function toCssTokens(prefix, steps){
+    return steps.map((hex, i) => `--${prefix}-${i}: ${hex.toLowerCase()};`).join("\n");
+  }
+
+  async function copyText(text){
+    try{
+      await navigator.clipboard.writeText(text);
+      return true;
+    }catch(e){
+      // Fallback: old-school prompt
+      window.prompt("Copy to clipboard:", text);
+      return false;
+    }
+  }
+
+  function cardTemplate({groupName, base, mode, tempLabel, steps}){
+    const prefix = ladderTokenName(base, groupName, mode, tempLabel);
+    const css = `/* ${groupName} — ${base} — ${mode} · ${tempLabel} */\n` + toCssTokens(prefix, steps);
+
+    const swatches = steps.map((hex, idx) => {
+      const h = hex.toLowerCase();
+      return `
+        <div class="swatch" style="background:${escapeHtml(h)}">
+          <div class="label">
+            <div class="idx">${idx}</div>
+            <code>${escapeHtml(h)}</code>
+          </div>
+        </div>`;
+    }).join("");
+
+    return `
+      <div class="card" data-prefix="${escapeHtml(prefix)}">
+        <h3>${escapeHtml(mode)} · ${escapeHtml(tempLabel)}</h3>
+        <div class="meta">${escapeHtml(base)} · prefix: <code>${escapeHtml(prefix)}</code></div>
+
+        <div class="ramp">${swatches}</div>
+
+        <div class="toolbar" style="margin:12px 0 0">
+          <span class="chip">
+            <strong>Tokens</strong>
+            <button type="button" data-action="copy-css">Copy CSS</button>
+          </span>
+          <span class="chip">
+            <strong>Hex</strong>
+            <button type="button" data-action="copy-hex">Copy list</button>
+          </span>
+        </div>
+
+        <pre class="vars">${escapeHtml(css)}</pre>
+      </div>`;
+  }
+
+  function render(){
+    const root = document.getElementById("app");
+    root.innerHTML = GROUPS.map(group => {
+      const cards = group.ladders.map(l =>
+        cardTemplate({ groupName: group.name, base: group.base, ...l })
+      ).join("");
+
+      return `
+        <section>
+          <h2 class="section-title">${escapeHtml(group.name)} <code>${escapeHtml(group.base)}</code></h2>
+          <div class="grid">${cards}</div>
+        </section>`;
+    }).join("");
+
+    root.addEventListener("click", async (e) => {
+      const btn = e.target.closest("button[data-action]");
+      if(!btn) return;
+
+      const card = btn.closest(".card");
+      if(!card) return;
+
+      const prefix = card.getAttribute("data-prefix");
+      const pre = card.querySelector(".vars");
+      const action = btn.getAttribute("data-action");
+
+      if(action === "copy-css"){
+        const ok = await copyText(pre.innerText);
+        if(ok){ btn.textContent = "Copied"; setTimeout(()=>btn.textContent="Copy CSS", 900); }
+      }
+
+      if(action === "copy-hex"){
+        // Copy just the hex list, one per line (in order)
+        const hexes = Array.from(card.querySelectorAll(".swatch"))
+          .map(sw => sw.style.backgroundColor) // will be rgb() in some browsers; better read from code tags
+          ;
+        const codes = Array.from(card.querySelectorAll(".label code")).map(n => n.textContent);
+        const payload = `/* ${prefix} */\n` + codes.join("\n");
+        const ok = await copyText(payload);
+        if(ok){ btn.textContent = "Copied"; setTimeout(()=>btn.textContent="Copy list", 900); }
+      }
+    }, { passive: true });
+  }
+
+  render();
+</script>
+</body>
+</html>
