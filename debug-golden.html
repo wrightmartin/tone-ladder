@@ -134,10 +134,68 @@
       // "Top 3 highlights" = last 3 steps.
       const top3 = (steps) => [steps - 3, steps - 2, steps - 1];
 
-      // Threshold: at least one of the top-3 highlight pairs must differ
-      // by ΔE_oklab >= 1.0, ignoring pairs where both have C < 0.01.
-      const DE_THRESHOLD = 1.0;
+      // Tier-2 checks are pragmatic.
+      // Near-white highlights have limited chroma headroom in sRGB, so we use a
+      // lower ΔE threshold there. Elsewhere we use a higher threshold to avoid
+      // “difference for difference’s sake”.
+
+      // Chroma below this: treat hue/tint as meaningless (skip pair if BOTH are below)
       const LOW_C = 0.01;
+
+      // Treat near-white highlights differently (small tints are all you can get)
+      const NEAR_WHITE_L = 0.95;
+
+      // Pragmatic ΔE thresholds (tunable)
+      const DE_THRESHOLD_NORMAL = 0.03;      // “clearly different” in UI
+      const DE_THRESHOLD_NEAR_WHITE = 0.015; // “barely visible tint” near white
+
+      function isNearWhite(hex) {
+        return hexToOklch(hex).L >= NEAR_WHITE_L;
+      }
+
+      function thresholdForPair(hexA, hexB) {
+        // If either swatch is near-white, use the lower threshold.
+        return (isNearWhite(hexA) || isNearWhite(hexB))
+          ? DE_THRESHOLD_NEAR_WHITE
+          : DE_THRESHOLD_NORMAL;
+      }
+
+      // Return { maxDE, maxAtStep, comparedAny, comparedPairs }
+      function maxDeltaEOverTop3(rampA, rampB, steps) {
+        const indices = top3(steps);
+        let maxDE = 0;
+        let maxAtStep = null;
+        let comparedAny = false;
+        let comparedPairs = 0;
+
+        for (const i of indices) {
+          const hexA = rampA[i];
+          const hexB = rampB[i];
+
+          const cA = hexToOklch(hexA).C;
+          const cB = hexToOklch(hexB).C;
+
+          // Skip if both near-zero chroma (hue meaningless)
+          if (cA < LOW_C && cB < LOW_C) continue;
+
+          comparedAny = true;
+          comparedPairs++;
+
+          const de = deltaE(hexA, hexB);
+          if (de > maxDE) {
+            maxDE = de;
+            maxAtStep = i;
+          }
+        }
+
+        return { maxDE, maxAtStep, comparedAny, comparedPairs };
+      }
+
+      // Return the effective threshold for the step that had maxDE (or normal default)
+      function thresholdForMaxStep(rampA, rampB, maxAtStep) {
+        if (maxAtStep == null) return DE_THRESHOLD_NORMAL;
+        return thresholdForPair(rampA[maxAtStep], rampB[maxAtStep]);
+      }
 
       // 2a. Low temperature sensitivity (warm vs cool, same mode)
       console.log('');
@@ -150,21 +208,11 @@
           const cool = ramps.find(tc => tc.base === base && tc.mode === mode && tc.temp < 0);
           if (!warm || !cool) continue;
 
-          const indices = top3(warm.steps);
-          let maxDE = 0;
-          let comparedAny = false;
-          for (const i of indices) {
-            const cW = hexToOklch(warm.ramp[i]).C;
-            const cC = hexToOklch(cool.ramp[i]).C;
-            // Skip if both near-zero chroma (hue meaningless)
-            if (cW < LOW_C && cC < LOW_C) continue;
-            comparedAny = true;
-            const de = deltaE(warm.ramp[i], cool.ramp[i]);
-            if (de > maxDE) maxDE = de;
-          }
+          const { maxDE, maxAtStep, comparedAny } = maxDeltaEOverTop3(warm.ramp, cool.ramp, warm.steps);
+          const thresh = thresholdForMaxStep(warm.ramp, cool.ramp, maxAtStep);
 
-          if (comparedAny && maxDE < DE_THRESHOLD) {
-            const msg = `${mode}: max ΔE=${maxDE.toFixed(3)} across top-3 highlights (threshold ${DE_THRESHOLD})`;
+          if (comparedAny && maxDE < thresh) {
+            const msg = `${mode}: max ΔE=${maxDE.toFixed(3)} at step ${maxAtStep} (threshold ${thresh})`;
             warnings.push({ base, message: msg });
             console.log(`  WARN  ${base} ${mode} — ${msg}`);
           }
@@ -182,21 +230,12 @@
           const paint = ramps.find(tc => tc.base === base && tc.temp === temp && tc.mode === 'painterly');
           if (!cons || !paint) continue;
 
-          const indices = top3(cons.steps);
-          let maxDE = 0;
-          let comparedAny = false;
-          for (const i of indices) {
-            const cCons = hexToOklch(cons.ramp[i]).C;
-            const cPaint = hexToOklch(paint.ramp[i]).C;
-            if (cCons < LOW_C && cPaint < LOW_C) continue;
-            comparedAny = true;
-            const de = deltaE(cons.ramp[i], paint.ramp[i]);
-            if (de > maxDE) maxDE = de;
-          }
+          const { maxDE, maxAtStep, comparedAny } = maxDeltaEOverTop3(cons.ramp, paint.ramp, cons.steps);
+          const thresh = thresholdForMaxStep(cons.ramp, paint.ramp, maxAtStep);
 
-          if (comparedAny && maxDE < DE_THRESHOLD) {
+          if (comparedAny && maxDE < thresh) {
             const tempLabel = temp > 0 ? 'warm' : 'cool';
-            const msg = `${tempLabel}: max ΔE=${maxDE.toFixed(3)} across top-3 highlights (threshold ${DE_THRESHOLD})`;
+            const msg = `${tempLabel}: max ΔE=${maxDE.toFixed(3)} at step ${maxAtStep} (threshold ${thresh})`;
             warnings.push({ base, message: msg });
             console.log(`  WARN  ${base} ${tempLabel} — ${msg}`);
           }

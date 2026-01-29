@@ -57,6 +57,13 @@ const CONVERGENCE_CHROMA_REF = 0.04;
 // produce convergence weights comparable to the v1 algorithm.
 const CONVERGENCE_BASE = 1.5;
 
+// Highlight tint cap: maximum chroma floor applied to the top 3 highlight steps
+// when temperature !== 0.  Actual floor = castStrength × |temperature| × cap.
+// Prevents chroma from collapsing to 0 so the cast (and thus mode/temp
+// differences) remain perceptible in highlights.  Placed before convergence
+// so the retained chroma gives convergence something to work with.
+const HIGHLIGHT_TINT_CAP = 0.08;
+
 // Near-neutral temperature study thresholds
 // When base chroma is below NEUTRAL_BASE_C_MAX, treat it as a "neutral temperature study"
 // where temperature should be the dominant signal (light color theory on greys)
@@ -371,6 +378,16 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
         if (H >= RED_FORBIDDEN_HUE_MIN && H <= RED_FORBIDDEN_HUE_MAX) {
           H = Math.min(H, RED_HIGHLIGHT_HUE_LIMIT);
         }
+      }
+
+      // Highlight tint floor: after hue is finalised (by cast, convergence,
+      // and guardrails), retain enough chroma in the top 3 highlights for
+      // mode/temp differences to remain visible.  Placed after convergence
+      // so it doesn't feed artificial chroma into the convergence weight,
+      // and after guardrails so the floor applies to the corrected hue.
+      if (isTop3Highlight && temperature !== 0) {
+        const tintFloor = config.castStrength * Math.abs(temperature) * HIGHLIGHT_TINT_CAP;
+        C = Math.max(C, tintFloor);
       }
     }
 
