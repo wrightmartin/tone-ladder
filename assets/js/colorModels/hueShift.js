@@ -24,19 +24,14 @@ import {
 // castStrength maps to the Photoshop reference model's "colour-cast layer opacity":
 //   0 → pure lightness ramp (no tint)   higher → stronger temperature tint
 const MODE_CONFIG = {
-  conservative: {
-    castStrength: 0.30,           // subtle tint for UI / product work
-    chromaRetention: 0.35,        // minimum chroma at extremes
-    chromaCurveExponent: 0.9,     // cosine falloff speed
-    neutralEndpointChromaFloor: 0.010
-  },
-  painterly: {
-    castStrength: 0.50,           // bolder tint for illustration / art direction
-    chromaRetention: 0.35,
-    chromaCurveExponent: 0.9,
-    neutralEndpointChromaFloor: 0.010
-  }
+  conservative: { castStrength: 0.30 },  // subtle tint for UI / product work
+  painterly:    { castStrength: 0.50 },  // bolder tint for illustration / art direction
 };
+
+// Shared chroma shaping constants (identical across modes)
+const CHROMA_RETENTION = 0.35;              // minimum chroma at extremes
+const CHROMA_CURVE_EXPONENT = 0.9;          // cosine falloff speed
+const NEUTRAL_ENDPOINT_CHROMA_FLOOR = 0.010;
 
 // Light color anchors as OKLab a/b directions (unit vectors)
 // Convergence in OKLab is more stable than hue-angle blending at low chroma
@@ -79,11 +74,6 @@ const NEUTRAL_TINT_C_MAX = 0.035;
 const HUE_STABILITY_CHROMA_FLOOR = 0.012;
 const HUE_STABILITY_CHROMA_REF = 0.045;
 
-// Temperature response curve exponent
-// > 1 compresses small values (gentle near neutral, strong at extremes)
-// 1.0 = linear, 2.0 = quadratic
-const TEMP_RESPONSE_EXPONENT = 1.6;
-
 // Lightness bounds (prevents pure white/black)
 const L_MIN = 0.08;
 const L_MAX = 0.98;
@@ -122,23 +112,6 @@ function getHueStabilityFactor(chroma) {
   const t = (chroma - HUE_STABILITY_CHROMA_FLOOR) /
             (HUE_STABILITY_CHROMA_REF - HUE_STABILITY_CHROMA_FLOOR);
   return t * t; // Quadratic ease-in
-}
-
-/**
- * Map temperature to perceptual response curve
- * Uses power function: sign(t) * |t|^γ
- *
- * With γ > 1:
- * - Small values are compressed (gentle near neutral)
- * - Large values approach 1 (strong at extremes)
- * - Continuous, monotonic, always passes through 0 and ±1
- * - Sign is preserved (+ = warm, - = cool)
- *
- * @param {number} t - Raw temperature (-1 to +1)
- * @returns {number} Mapped temperature (-1 to +1)
- */
-function mapTemperature(t) {
-  return Math.sign(t) * Math.pow(Math.abs(t), TEMP_RESPONSE_EXPONENT);
 }
 
 /**
@@ -212,39 +185,31 @@ function convergeInOklab(oklch, anchorA, anchorB, weight) {
 }
 
 /**
- * Generates a tonal ramp with hue shifts based on light temperature
+ * Build a monotonic lightness ramp anchored to the base color's lightness
  *
- * @param {Object} baseOklch - Base color in OKLCH { L, C, H }
- * @param {number} temperature - Light temperature -1 (cool) to +1 (warm)
+ * Distributes steps evenly across [L_MIN, L_MAX], offsets so the midpoint
+ * matches baseL, compresses toward bounds if needed, and enforces strict
+ * monotonicity.
+ *
+ * @param {number} baseL - Base color lightness (will be clamped to [L_MIN, L_MAX])
  * @param {number} steps - Number of steps (9 or 11)
- * @param {string} mode - 'conservative' or 'painterly'
- * @returns {Object[]} Array of OKLCH colors ordered darkest to lightest
+ * @param {number} midIndex - Index of the midpoint step
+ * @returns {number[]} Array of lightness values, dark to light
  */
-export function generateOklchRamp(baseOklch, temperature, steps, mode) {
-  const config = MODE_CONFIG[mode] || MODE_CONFIG.painterly;
-
-  // Find the midpoint index (where base color will be placed)
-  const midIndex = Math.floor(steps / 2);
-
-  // Generate lightness values from dark to light
+function buildLightnessRamp(baseL, steps, midIndex) {
   const lightnessValues = [];
   for (let i = 0; i < steps; i++) {
-    // Map step index to lightness range [L_MIN, L_MAX]
     const t = i / (steps - 1);
     lightnessValues.push(L_MIN + t * (L_MAX - L_MIN));
   }
 
-  // Adjust lightness values so midpoint matches base color's lightness
-  // while keeping the range within bounds
-  const baseLightness = Math.max(L_MIN, Math.min(L_MAX, baseOklch.L));
+  const baseLightness = Math.max(L_MIN, Math.min(L_MAX, baseL));
   const midLightness = lightnessValues[midIndex];
   const lightnessOffset = baseLightness - midLightness;
 
-  // Apply offset with compression at extremes
   for (let i = 0; i < steps; i++) {
     let adjusted = lightnessValues[i] + lightnessOffset;
 
-    // Compress toward bounds if exceeding
     if (adjusted < L_MIN) {
       const distFromMid = midIndex - i;
       const maxDist = midIndex;
@@ -260,14 +225,31 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
     lightnessValues[i] = Math.max(L_MIN, Math.min(L_MAX, adjusted));
   }
 
-  // Enforce strict monotonicity in lightness values BEFORE clamping
-  // This ensures ramp order is stable by construction, avoiding post-clamp L nudges
-  const L_EPSILON = 0.002; // Minimum L step between adjacent values
+  // Enforce strict monotonicity
+  const L_EPSILON = 0.002;
   for (let i = 1; i < steps; i++) {
     if (lightnessValues[i] <= lightnessValues[i - 1]) {
       lightnessValues[i] = Math.min(L_MAX, lightnessValues[i - 1] + L_EPSILON);
     }
   }
+
+  return lightnessValues;
+}
+
+/**
+ * Generates a tonal ramp with hue shifts based on light temperature
+ *
+ * @param {Object} baseOklch - Base color in OKLCH { L, C, H }
+ * @param {number} temperature - Light temperature -1 (cool) to +1 (warm)
+ * @param {number} steps - Number of steps (9 or 11)
+ * @param {string} mode - 'conservative' or 'painterly'
+ * @returns {Object[]} Array of OKLCH colors ordered darkest to lightest
+ */
+export function generateOklchRamp(baseOklch, temperature, steps, mode) {
+  const config = MODE_CONFIG[mode] || MODE_CONFIG.painterly;
+
+  const midIndex = Math.floor(steps / 2);
+  const lightnessValues = buildLightnessRamp(baseOklch.L, steps, midIndex);
 
   // Detect near-neutral base for temperature study treatment
   const isNeutralBase = baseOklch.C <= NEUTRAL_BASE_C_MAX;
@@ -318,7 +300,7 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
       // === STANDARD BRANCH (non-neutral or neutral with temp=0) ===
 
       // Chroma curve (not cast-related — same for both modes)
-      const targetChroma = calculateChroma(baseOklch.C, relativePosition, config);
+      const targetChroma = calculateChroma(baseOklch.C, relativePosition);
 
       // Hue bias toward temperature anchor, driven by cast
       let anchorHue;
@@ -395,7 +377,7 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
     const isEndpoint = (i === 0 || i === steps - 1);
     if (isEndpoint && temperature !== 0) {
       const baseFloor = isNeutralBase
-        ? config.neutralEndpointChromaFloor
+        ? NEUTRAL_ENDPOINT_CHROMA_FLOOR
         : 0.015;
       const chromaFloor = baseFloor * Math.abs(temperature);
       C = Math.max(C, chromaFloor);
@@ -411,57 +393,15 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
 }
 
 /**
- * Calculate biased hue for a given position in the ramp
- *
- * Uses anchor-bias approach (not rotation around base hue):
- * - Warm light (+temp): highlights bias toward warm anchor (65°), shadows toward cool anchor (205°)
- * - Cool light (-temp): highlights bias toward cool anchor, shadows toward warm anchor
- * - At midpoint (relativePosition === 0): hue remains the base hue
- *
- * @param {number} baseHue - Base color hue in degrees
- * @param {number} relativePosition - Position in ramp (-1 to +1)
- * @param {number} temperature - Light temperature (-1 to +1)
- * @param {number} maxBlendWeight - Maximum blend weight toward anchor (0-1)
- * @returns {number} Final hue in degrees (0-360)
- */
-function calculateBiasedHue(baseHue, relativePosition, temperature, maxBlendWeight) {
-  if (temperature === 0 || relativePosition === 0) return normalizeHue(baseHue);
-
-  // Determine which anchor to bias toward based on position and temperature
-  // Warm light: highlights -> warm (65°), shadows -> cool (205°)
-  // Cool light: highlights -> cool (205°), shadows -> warm (65°)
-  const isHighlight = relativePosition > 0;
-  const isWarmLight = temperature > 0;
-
-  let anchorHue;
-  if (isWarmLight) {
-    anchorHue = isHighlight ? WARM_ANCHOR_H : COOL_ANCHOR_H;
-  } else {
-    anchorHue = isHighlight ? COOL_ANCHOR_H : WARM_ANCHOR_H;
-  }
-
-  // Blend weight scales with:
-  // - distance from midpoint (raised to power for ease-in)
-  // - temperature strength (mapped through response curve)
-  const positionWeight = Math.pow(Math.abs(relativePosition), 1.1);
-  const tempStrength = Math.abs(mapTemperature(temperature));
-  const blendWeight = positionWeight * tempStrength * maxBlendWeight;
-
-  // Blend toward anchor via shortest arc
-  return blendHueDegrees(baseHue, anchorHue, blendWeight);
-}
-
-/**
  * Calculate chroma for a given position in the ramp
  * Saturation peaks near midtones and decreases toward extremes
  *
  * @param {number} baseChroma - Base color chroma
  * @param {number} relativePosition - Position in ramp (-1 to +1)
- * @param {Object} config - Mode configuration with chromaRetention and chromaCurveExponent
  */
-function calculateChroma(baseChroma, relativePosition, config) {
-  const minRetention = config.chromaRetention;
-  const exponent = config.chromaCurveExponent;
+function calculateChroma(baseChroma, relativePosition) {
+  const minRetention = CHROMA_RETENTION;
+  const exponent = CHROMA_CURVE_EXPONENT;
 
   // Saturation curve: peaks at midpoint, decreases toward extremes
   // Using a cosine curve for smooth falloff, with exponent to control speed
@@ -637,7 +577,7 @@ export function debugGamutMapping(baseHex, temperature, steps, mode) {
     const relativePosition = (i - midIndex) / midIndex;
 
     // Calculate chroma
-    const targetChroma = calculateChroma(baseOklch.C, relativePosition, config);
+    const targetChroma = calculateChroma(baseOklch.C, relativePosition);
     const highlightFactor = Math.max(0, relativePosition);
     const highlightChromaFalloff = 1 - Math.pow(highlightFactor, 2.2);
     const C = targetChroma * highlightChromaFalloff;
