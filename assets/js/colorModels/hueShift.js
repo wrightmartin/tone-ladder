@@ -185,49 +185,182 @@ function convergeInOklab(oklch, anchorA, anchorB, weight) {
 }
 
 /**
- * Build a monotonic lightness ramp anchored to the base color's lightness
+ * Lightweight color computation for ΔE profiling
  *
- * Distributes steps evenly across [L_MIN, L_MAX], offsets so the midpoint
- * matches baseL, compresses toward bounds if needed, and enforces strict
- * monotonicity.
+ * Runs the core cast/chroma pipeline without convergence, guardrails,
+ * tint floors, or endpoint floors.  This is sufficient for measuring
+ * the ΔE profile along the lightness curve — those omitted corrections
+ * are small and don't meaningfully change the perceptual spacing.
  *
- * @param {number} baseL - Base color lightness (will be clamped to [L_MIN, L_MAX])
+ * @param {number} L - Lightness value
+ * @param {number} relPos - Relative position (-1 to +1)
+ * @param {Object} baseOklch - Base color in OKLCH { L, C, H }
+ * @param {number} temperature - Light temperature (-1 to +1)
+ * @param {Object} config - Mode configuration { castStrength }
+ * @param {boolean} isNeutralBase - Whether base is near-neutral
+ * @returns {Object} Gamut-clamped OKLCH { L, C, H }
+ */
+function sampleColorForDE(L, relPos, baseOklch, temperature, config, isNeutralBase) {
+  const t_cast = Math.abs(relPos);
+  const castFactor = smoothstep(0, 1, t_cast);
+  const cast = config.castStrength * castFactor * Math.abs(temperature);
+  const isHighlight = relPos > 0;
+  const isWarmLight = temperature > 0;
+
+  let H, C;
+
+  if (isNeutralBase && temperature !== 0) {
+    let anchorA, anchorB;
+    if (isWarmLight) {
+      anchorA = isHighlight ? WARM_ANCHOR_A : COOL_ANCHOR_A;
+      anchorB = isHighlight ? WARM_ANCHOR_B : COOL_ANCHOR_B;
+    } else {
+      anchorA = isHighlight ? COOL_ANCHOR_A : WARM_ANCHOR_A;
+      anchorB = isHighlight ? COOL_ANCHOR_B : WARM_ANCHOR_B;
+    }
+    H = normalizeHue(Math.atan2(anchorB, anchorA) * (180 / Math.PI));
+    C = cast * NEUTRAL_TINT_C_MAX;
+  } else {
+    const targetChroma = calculateChroma(baseOklch.C, relPos);
+    let anchorHue;
+    if (isWarmLight) {
+      anchorHue = isHighlight ? WARM_ANCHOR_H : COOL_ANCHOR_H;
+    } else {
+      anchorHue = isHighlight ? COOL_ANCHOR_H : WARM_ANCHOR_H;
+    }
+    const rawBiasedHue = blendHueDegrees(baseOklch.H, anchorHue, cast);
+    const stabilityFactor = getHueStabilityFactor(targetChroma);
+    H = blendHueDegrees(baseOklch.H, rawBiasedHue, stabilityFactor);
+    const highlightFactor = Math.max(0, relPos);
+    const highlightChromaFalloff = 1 - Math.pow(highlightFactor, 2.2);
+    C = targetChroma * highlightChromaFalloff;
+  }
+
+  return clampToSrgbGamut({ L, C, H });
+}
+
+/**
+ * Reparameterize one half of the lightness ramp by equal ΔE spacing
+ *
+ * Oversamples the half, computes cumulative ΔE (Euclidean in OKLab),
+ * then selects L values that divide the total arc into equal segments.
+ *
+ * @param {number} lStart - Start lightness (inclusive)
+ * @param {number} lEnd - End lightness (inclusive)
+ * @param {number} numIntervals - Number of intervals (steps - 1 in this half)
+ * @param {Object} baseOklch - Base color in OKLCH
+ * @param {number} temperature - Light temperature
+ * @param {Object} config - Mode configuration
+ * @param {boolean} isNeutralBase - Whether base is near-neutral
+ * @param {boolean} isHighlightHalf - True for highlight half (relPos 0→+1)
+ * @returns {number[]} Array of numIntervals+1 lightness values
+ */
+function reparameterizeHalf(lStart, lEnd, numIntervals, baseOklch, temperature, config, isNeutralBase, isHighlightHalf) {
+  if (numIntervals <= 0) return [lStart];
+
+  const lRange = lEnd - lStart;
+  if (lRange <= 0) return [lStart];
+
+  const N = 200;
+  const baseL = Math.max(L_MIN, Math.min(L_MAX, baseOklch.L));
+
+  // Oversample: generate N+1 evenly-spaced L values and compute color at each
+  const samples = [];
+  for (let j = 0; j <= N; j++) {
+    const t = j / N;
+    const L = lStart + t * lRange;
+    // Map L to continuous relativePosition:
+    //   shadow half:    relPos goes from -1 (at L_MIN) to 0 (at baseL)
+    //   highlight half: relPos goes from 0 (at baseL) to +1 (at L_MAX)
+    let relPos;
+    if (isHighlightHalf) {
+      relPos = (baseL < L_MAX) ? (L - baseL) / (L_MAX - baseL) : 0;
+    } else {
+      relPos = (baseL > L_MIN) ? -((baseL - L) / (baseL - L_MIN)) : 0;
+    }
+    const color = sampleColorForDE(L, relPos, baseOklch, temperature, config, isNeutralBase);
+    samples.push({ L, color });
+  }
+
+  // Compute cumulative ΔE (Euclidean in OKLab)
+  const cumDE = [0];
+  for (let j = 1; j <= N; j++) {
+    const labA = oklchToOklab(samples[j - 1].color);
+    const labB = oklchToOklab(samples[j].color);
+    const de = Math.sqrt(
+      (labA.L - labB.L) ** 2 + (labA.a - labB.a) ** 2 + (labA.b - labB.b) ** 2
+    );
+    cumDE.push(cumDE[j - 1] + de);
+  }
+  const totalDE = cumDE[N];
+
+  if (totalDE <= 0) {
+    // Fallback: even L spacing if no perceptual distance (e.g., zero-range half)
+    const result = [];
+    for (let k = 0; k <= numIntervals; k++) {
+      result.push(lStart + (k / numIntervals) * lRange);
+    }
+    return result;
+  }
+
+  // Select L values at equal ΔE intervals via binary search
+  const result = [lStart];
+  for (let k = 1; k < numIntervals; k++) {
+    const targetDE = (k / numIntervals) * totalDE;
+    // Binary search in cumDE
+    let lo = 0, hi = N;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (cumDE[mid] < targetDE) lo = mid;
+      else hi = mid;
+    }
+    // Linear interpolation between samples[lo] and samples[hi]
+    const frac = (cumDE[hi] - cumDE[lo]) > 0
+      ? (targetDE - cumDE[lo]) / (cumDE[hi] - cumDE[lo])
+      : 0;
+    result.push(samples[lo].L + frac * (samples[hi].L - samples[lo].L));
+  }
+  result.push(lEnd);
+
+  return result;
+}
+
+/**
+ * Build a perceptually-spaced lightness ramp anchored to the base color
+ *
+ * Splits the lightness range into shadow and highlight halves at baseL,
+ * then uses arc-length reparameterization (cumulative ΔE in OKLab) to
+ * place steps at equal perceptual intervals within each half.
+ *
+ * @param {Object} baseOklch - Base color in OKLCH
  * @param {number} steps - Number of steps (9 or 11)
  * @param {number} midIndex - Index of the midpoint step
+ * @param {number} temperature - Light temperature
+ * @param {Object} config - Mode configuration
+ * @param {boolean} isNeutralBase - Whether base is near-neutral
  * @returns {number[]} Array of lightness values, dark to light
  */
-function buildLightnessRamp(baseL, steps, midIndex) {
-  const lightnessValues = [];
-  for (let i = 0; i < steps; i++) {
-    const t = i / (steps - 1);
-    lightnessValues.push(L_MIN + t * (L_MAX - L_MIN));
-  }
+function buildPerceptualLightnessRamp(baseOklch, steps, midIndex, temperature, config, isNeutralBase) {
+  const baseL = Math.max(L_MIN, Math.min(L_MAX, baseOklch.L));
 
-  const baseLightness = Math.max(L_MIN, Math.min(L_MAX, baseL));
-  const midLightness = lightnessValues[midIndex];
-  const lightnessOffset = baseLightness - midLightness;
+  const numShadowIntervals = midIndex;          // steps below midpoint
+  const numHighlightIntervals = steps - 1 - midIndex; // steps above midpoint
 
-  for (let i = 0; i < steps; i++) {
-    let adjusted = lightnessValues[i] + lightnessOffset;
+  const shadowL = reparameterizeHalf(
+    L_MIN, baseL, numShadowIntervals,
+    baseOklch, temperature, config, isNeutralBase, false
+  );
+  const highlightL = reparameterizeHalf(
+    baseL, L_MAX, numHighlightIntervals,
+    baseOklch, temperature, config, isNeutralBase, true
+  );
 
-    if (adjusted < L_MIN) {
-      const distFromMid = midIndex - i;
-      const maxDist = midIndex;
-      const compressionFactor = distFromMid / maxDist;
-      adjusted = L_MIN + (baseLightness - L_MIN) * (1 - compressionFactor);
-    } else if (adjusted > L_MAX) {
-      const distFromMid = i - midIndex;
-      const maxDist = steps - 1 - midIndex;
-      const compressionFactor = distFromMid / maxDist;
-      adjusted = L_MAX - (L_MAX - baseLightness) * (1 - compressionFactor);
-    }
+  // Combine (shadow includes baseL at end, highlight starts at baseL — skip duplicate)
+  const lightnessValues = [...shadowL, ...highlightL.slice(1)];
 
-    lightnessValues[i] = Math.max(L_MIN, Math.min(L_MAX, adjusted));
-  }
-
-  // Enforce strict monotonicity
+  // Safety: enforce strict monotonicity (should already hold)
   const L_EPSILON = 0.002;
-  for (let i = 1; i < steps; i++) {
+  for (let i = 1; i < lightnessValues.length; i++) {
     if (lightnessValues[i] <= lightnessValues[i - 1]) {
       lightnessValues[i] = Math.min(L_MAX, lightnessValues[i - 1] + L_EPSILON);
     }
@@ -249,10 +382,13 @@ export function generateOklchRamp(baseOklch, temperature, steps, mode) {
   const config = MODE_CONFIG[mode] || MODE_CONFIG.painterly;
 
   const midIndex = Math.floor(steps / 2);
-  const lightnessValues = buildLightnessRamp(baseOklch.L, steps, midIndex);
 
   // Detect near-neutral base for temperature study treatment
   const isNeutralBase = baseOklch.C <= NEUTRAL_BASE_C_MAX;
+
+  const lightnessValues = buildPerceptualLightnessRamp(
+    baseOklch, steps, midIndex, temperature, config, isNeutralBase
+  );
 
   // Generate the ramp
   const ramp = [];
